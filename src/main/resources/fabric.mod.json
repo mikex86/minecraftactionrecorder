@@ -1,0 +1,38 @@
+{
+	"schemaVersion": 1,
+	"id": "minecraftactionrecorder",
+	"version": "${version}",
+	"name": "MinecraftActionRecorder",
+	"description": "Records minecraft gameplay and keystrokes to a local file.",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/minecraftactionrecorder/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"client": [
+			"me.michael.kei.actionrecorder.MinecraftActionRecorderClient"
+		]
+	},
+	"mixins": [
+		"minecraftactionrecorder.mixins.json",
+		{
+			"config": "minecraftactionrecorder.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.17.2",
+		"minecraft": "~1.21.8",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}
