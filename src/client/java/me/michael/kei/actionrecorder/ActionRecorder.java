@@ -49,6 +49,10 @@ public class ActionRecorder {
     private static boolean hotbarNinePressed = false;
     private static boolean hotbarNineDown = false;
 
+    private static int hotbarIndex = 0;
+    private static boolean hotbarMoveLeft = false;
+    private static boolean hotbarMoveRight = false;
+
     private static float yawDelta = 0;
     private static float pitchDelta = 0;
     private static double cursorXDelta = 0;
@@ -178,6 +182,26 @@ public class ActionRecorder {
         hotbarNineDown = hotbarNine;
     }
 
+    private static void trackHotbarIndex(int index) {
+        if (index != hotbarIndex) {
+            int delta = index - hotbarIndex;
+            if (delta == 1 || (delta == -8 && index == 0)) {
+                hotbarMoveRight = true;
+                hotbarMoveLeft = false;
+            } else if (delta == -1 || (delta == 8 && index == 8)) {
+                hotbarMoveLeft = true;
+                hotbarMoveRight = false;
+            } else {
+                hotbarMoveLeft = false;
+                hotbarMoveRight = false;
+            }
+        } else {
+            hotbarMoveLeft = false;
+            hotbarMoveRight = false;
+        }
+        hotbarIndex = index;
+    }
+
     private static void trackCursorMoveX(double cursorX) {
         if (lastCursorX == cursorX) {
             return;
@@ -266,6 +290,8 @@ public class ActionRecorder {
         trackHotbarEight(minecraft.options.keyHotbarSlots[7].isDown());
         trackHotbarNine(minecraft.options.keyHotbarSlots[8].isDown());
 
+        trackHotbarIndex(player.getInventory().getSelectedSlot());
+
         if (minecraft.screen != null) {
             double mouseX = minecraft.mouseHandler.xpos();
             double mouseY = minecraft.mouseHandler.ypos();
@@ -300,8 +326,9 @@ public class ActionRecorder {
     }
 
     private static void saveFrame() {
-        int width = Minecraft.getInstance().getWindow().getWidth();
-        int height = Minecraft.getInstance().getWindow().getHeight();
+        Minecraft mc = Minecraft.getInstance();
+        int width = mc.getWindow().getWidth();
+        int height = mc.getWindow().getHeight();
         if (frameBuffer == null || frameBufferWidth != width || frameBufferHeight != height) {
             frameBufferWidth = width;
             frameBufferHeight = height;
@@ -329,8 +356,76 @@ public class ActionRecorder {
             }
         }
         FrameCapture.grabMainFramebufferRGB(frameBuffer);
-        // TODO: render cursor
+        renderCursor(mc.screen != null, frameBuffer);
         videoWriter.pushFrame(frameBuffer);
+    }
+
+    private static final String cursorResourcePath = "/assets/minecraftactionrecorder/cursor.png";
+
+    private static final byte[] cursorRgba = readPngImage(cursorResourcePath);
+    private static final int cursorWidth = 32;
+    private static final int cursorHeight = 32;
+
+    private static void renderCursor(boolean show, byte[] rgb) {
+        if (!show) {
+            return;
+        }
+        int windowWidth = frameBufferWidth;
+        int windowHeight = frameBufferHeight;
+
+        int mouseX = (int) lastCursorX;
+        int mouseY = (int) (windowHeight - lastCursorY - cursorHeight);
+
+        int startX = Math.max(0, mouseX);
+        int startY = Math.max(0, mouseY);
+        int endX = Math.min(windowWidth, mouseX + cursorWidth);
+        int endY = Math.min(windowHeight, mouseY + cursorHeight);
+
+        for (int y = startY; y < endY; y++) {
+            for (int x = startX; x < endX; x++) {
+                int cursorX = x - mouseX;
+                int cursorY = y - mouseY;
+                int cursorIndex = (cursorX + cursorY * cursorWidth) * 4;
+                int rgbIndex = (x + y * windowWidth) * 3;
+
+                float alpha = (cursorRgba[cursorIndex + 3] & 0xFF) / 255.0f;
+                if (alpha == 0) {
+                    continue; // fully transparent
+                }
+
+                for (int c = 0; c < 3; c++) {
+                    int cursorColor = cursorRgba[cursorIndex + c] & 0xFF;
+                    int bgColor = rgb[rgbIndex + c] & 0xFF;
+                    int blendedColor = (int) (cursorColor * alpha + bgColor * (1 - alpha));
+                    rgb[rgbIndex + c] = (byte) blendedColor;
+                }
+            }
+        }
+    }
+
+    private static byte[] readPngImage(String resourcePath) {
+        try (var is = ActionRecorder.class.getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                throw new IOException("Resource not found: " + resourcePath);
+            }
+            var img = javax.imageio.ImageIO.read(is);
+            int w = img.getWidth();
+            int h = img.getHeight();
+            byte[] data = new byte[w * h * 4];
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int argb = img.getRGB(x, y);
+                    int i = (x + (h - y - 1) * w) * 4;
+                    data[i] = (byte) ((argb >> 16) & 0xFF); // R
+                    data[i + 1] = (byte) ((argb >> 8) & 0xFF); // G
+                    data[i + 2] = (byte) (argb & 0xFF); // B
+                    data[i + 3] = (byte) ((argb >> 24) & 0xFF); // A
+                }
+            }
+            return data;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read image: " + resourcePath, e);
+        }
     }
 
     public static void saveActionState() {
@@ -359,6 +454,9 @@ public class ActionRecorder {
                     hotbarSevenPressed,
                     hotbarEightPressed,
                     hotbarNinePressed,
+
+                    hotbarMoveLeft,
+                    hotbarMoveRight,
 
                     // mouse
                     lastLeftClickPressed,

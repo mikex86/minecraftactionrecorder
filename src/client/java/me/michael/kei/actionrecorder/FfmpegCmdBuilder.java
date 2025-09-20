@@ -12,7 +12,6 @@ public class FfmpegCmdBuilder {
     public enum Vendor { NVIDIA, AMD, INTEL, APPLE, OTHER }
     public enum Os { WINDOWS, LINUX, MAC, OTHER }
 
-    /** Must be called on the render thread with a current GL context. */
     public static Vendor detectGpuVendor() {
         String vendor = GL11C.glGetString(GL11C.GL_VENDOR);
         if (vendor == null) return Vendor.OTHER;
@@ -32,20 +31,6 @@ public class FfmpegCmdBuilder {
         return Os.OTHER;
     }
 
-    /**
-     * Build an ffmpeg command that reads raw RGB24 frames from stdin and uses a GPU encoder when possible.
-     * Pass the same width/height/fps you capture with.
-     *
-     * @param ffmpegPath path to ffmpeg executable
-     * @param width  frame width
-     * @param height frame height
-     * @param fps    frames per second
-     * @param outputFile output file (container determined by extension; .mp4 recommended)
-     * @return argv list suitable for ProcessBuilder
-     *
-     * Note: Hardware encoders don't output RGB; they encode YUV (typically yuv420p).
-     * If you require RGB-preserving compression, set forceRgbSoftware=true to use libx264rgb (CPU).
-     */
     public static List<String> buildCmd(String ffmpegPath, int width, int height, int fps, Path outputFile) {
         return buildCmd(ffmpegPath, width, height, fps, outputFile, /*forceRgbSoftware*/ false, /*vaapiDevice*/ "/dev/dri/renderD128");
     }
@@ -99,10 +84,6 @@ public class FfmpegCmdBuilder {
         ));
         return cmd;
     }
-
-    /* ===========================
-       Encoder choices + flags
-       =========================== */
 
     private static void addNvenc(List<String> cmd, String cpuFilterChain) {
         // NVIDIA NVENC H.264
