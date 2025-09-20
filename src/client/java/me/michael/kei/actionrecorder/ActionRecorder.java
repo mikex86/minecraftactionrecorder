@@ -1,12 +1,15 @@
 package me.michael.kei.actionrecorder;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.player.LocalPlayer;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ActionRecorder {
 
@@ -55,6 +58,14 @@ public class ActionRecorder {
 
     private static boolean moveToOffhandPressed = false;
     private static boolean moveToOffhandDown = false;
+
+    private static boolean playerMenuOpen = false;
+
+    private static boolean openChatPressed = false;
+    private static boolean openChatDown = false;
+
+    // Per-frame typed characters when a Screen is open
+    public static final List<String> pressedScreenKeys = new ArrayList<>();
 
     private static float yawDelta = 0;
     private static float pitchDelta = 0;
@@ -210,6 +221,18 @@ public class ActionRecorder {
         moveToOffhandDown = offhandDown;
     }
 
+    private static void trackPlayerMenuOpen(boolean playerMenuOpenState) {
+        if (playerMenuOpen == playerMenuOpenState) {
+            return;
+        }
+        playerMenuOpen = playerMenuOpenState;
+    }
+
+    private static void trackOpenChat(boolean openChatState) {
+        openChatPressed = openChatDown != openChatState && openChatState; // pressed state is only true on the frame the key is pressed down
+        openChatDown = openChatState;
+    }
+
     private static void trackCursorMoveX(double cursorX) {
         if (lastCursorX == cursorX) {
             return;
@@ -260,9 +283,13 @@ public class ActionRecorder {
         }
     }
 
+    private static boolean prevIsScreenOpen = false;
+    private static long timeScreenOpened = 0;
+
     private static void recordCaptureFrame(Minecraft minecraft) {
         LocalPlayer player = minecraft.player;
         if (player == null) {
+            pressedScreenKeys.clear();
             return;
         }
 
@@ -302,7 +329,19 @@ public class ActionRecorder {
 
         trackMoveToOffhand(minecraft.options.keySwapOffhand.isDown());
 
+        trackPlayerMenuOpen(minecraft.options.keyPlayerList.isDown());
+
+        trackOpenChat(minecraft.options.keyChat.isDown());
+
         if (minecraft.screen != null) {
+            if (!prevIsScreenOpen) {
+                timeScreenOpened = System.currentTimeMillis();
+            }
+            if ((System.currentTimeMillis() - timeScreenOpened) < 10) {
+                // clear all keys in the first 10ms after opening a screen... This is a bit of a hack
+                // but it avoids reading the key as a typed character which opened the screen itself.
+                pressedScreenKeys.clear();
+            }
             double mouseX = minecraft.mouseHandler.xpos();
             double mouseY = minecraft.mouseHandler.ypos();
             trackCursorMoveX(mouseX);
@@ -310,9 +349,13 @@ public class ActionRecorder {
         } else {
             cursorXDelta = 0;
             cursorYDelta = 0;
+            pressedScreenKeys.clear();
         }
+        prevIsScreenOpen = minecraft.screen != null;
+
         saveActionState();
         Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
+        pressedScreenKeys.clear();
     }
 
     private static byte[] frameBuffer = null;
@@ -471,12 +514,19 @@ public class ActionRecorder {
                     // offhand
                     moveToOffhandPressed,
 
+                    // player menu
+                    playerMenuOpen,
+
+                    // open chat
+                    openChatPressed,
+
                     // mouse
                     lastLeftClickPressed,
                     lastRightClickPressed,
             };
             try {
-                logWriter.logStates(states, new float[]{yawDelta, pitchDelta}, new double[]{cursorXDelta, cursorYDelta});
+                // pressedScreenKeys = List<Character>
+                logWriter.logStates(states, new float[]{yawDelta, pitchDelta}, new double[]{cursorXDelta, cursorYDelta}, pressedScreenKeys);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
