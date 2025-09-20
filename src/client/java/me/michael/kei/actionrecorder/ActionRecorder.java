@@ -53,6 +53,9 @@ public class ActionRecorder {
     private static boolean hotbarMoveLeft = false;
     private static boolean hotbarMoveRight = false;
 
+    private static boolean moveToOffhandPressed = false;
+    private static boolean moveToOffhandDown = false;
+
     private static float yawDelta = 0;
     private static float pitchDelta = 0;
     private static double cursorXDelta = 0;
@@ -202,6 +205,11 @@ public class ActionRecorder {
         hotbarIndex = index;
     }
 
+    private static void trackMoveToOffhand(boolean offhandDown) {
+        moveToOffhandPressed = moveToOffhandDown != offhandDown && offhandDown; // pressed state is only true on the frame the key is pressed down
+        moveToOffhandDown = offhandDown;
+    }
+
     private static void trackCursorMoveX(double cursorX) {
         if (lastCursorX == cursorX) {
             return;
@@ -291,6 +299,8 @@ public class ActionRecorder {
         trackHotbarNine(minecraft.options.keyHotbarSlots[8].isDown());
 
         trackHotbarIndex(player.getInventory().getSelectedSlot());
+
+        trackMoveToOffhand(minecraft.options.keySwapOffhand.isDown());
 
         if (minecraft.screen != null) {
             double mouseX = minecraft.mouseHandler.xpos();
@@ -457,6 +467,9 @@ public class ActionRecorder {
 
                     hotbarMoveLeft,
                     hotbarMoveRight,
+
+                    // offhand
+                    moveToOffhandPressed,
 
                     // mouse
                     lastLeftClickPressed,
