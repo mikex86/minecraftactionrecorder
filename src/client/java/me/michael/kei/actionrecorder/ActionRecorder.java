@@ -301,11 +301,11 @@ public class ActionRecorder {
         trackYaw(player.getYRot());
         trackPitch(player.getXRot());
         trackInventoryOpen(minecraft.screen instanceof InventoryScreen);
-        trackMoveForward(minecraft.options.keyUp.isDown() && minecraft.screen != null);
-        trackMoveBackward(minecraft.options.keyDown.isDown() && minecraft.screen != null);
-        trackMoveLeft(minecraft.options.keyLeft.isDown() && minecraft.screen != null);
-        trackMoveRight(minecraft.options.keyRight.isDown() && minecraft.screen != null);
-        trackCrouch((minecraft.options.keyShift.isDown() && minecraft.screen != null)
+        trackMoveForward(minecraft.options.keyUp.isDown() && minecraft.screen == null);
+        trackMoveBackward(minecraft.options.keyDown.isDown() && minecraft.screen == null);
+        trackMoveLeft(minecraft.options.keyLeft.isDown() && minecraft.screen == null);
+        trackMoveRight(minecraft.options.keyRight.isDown() && minecraft.screen == null);
+        trackCrouch((minecraft.options.keyShift.isDown() && minecraft.screen == null)
                 ||
                 (minecraft.options.keyShift.isDown() && (minecraft.screen != null) && (lastLeftClickPressed || lastRightClickPressed))
         ); // this one has an effect on click in the inventory screen
