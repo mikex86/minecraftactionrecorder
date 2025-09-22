@@ -88,10 +88,11 @@ public final class FfmpegPipeWriter implements AutoCloseable {
     public void pushFrame(byte[] rgb) {
         if (!running) return;
         if (rgb.length != bytesPerFrame) return;
-
-        // Drop-oldest policy to keep latency bounded:
-        while (!queue.offer(copyPooled(rgb))) {
-            queue.poll(); // discard one and try again
+        try {
+            // Block until there's room
+            queue.put(copyPooled(rgb));
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 

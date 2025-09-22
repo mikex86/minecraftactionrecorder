@@ -401,7 +401,7 @@ public class ActionRecorder {
                         "ffmpeg",
                         getNextCapturePath("mp4"),
                         width, height, TARGET_FRAME_RATE,
-                        16
+                        128
                 );
                 logWriter = new ActionLogWriter(getNextCapturePath("alog"));
             } catch (IOException e) {
