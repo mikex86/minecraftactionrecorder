@@ -1,6 +1,8 @@
 package me.michael.kei.actionrecorder.mixin;
 
 import me.michael.kei.actionrecorder.ActionRecorder;
+import me.michael.kei.actionrecorder.TimeScaler;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -13,5 +15,7 @@ public class MinecraftMixin {
     private void runTick(CallbackInfo ci) {
         @SuppressWarnings("DataFlowIssue") Minecraft mc = (Minecraft) (Object) this;
         ActionRecorder.captureState(mc);
+
+        Util.timeSource = TimeScaler::scaledNanoTime;
     }
 }

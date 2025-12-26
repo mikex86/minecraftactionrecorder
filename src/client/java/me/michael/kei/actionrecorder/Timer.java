@@ -64,7 +64,7 @@ public class Timer {
      */
     public void advanceTime() {
         // Get current time and calculate elapsed time
-        long now = System.nanoTime();
+        long now = TimeScaler.scaledNanoTime();
         long passedNs = now - this.lastTime;
         this.lastTime = now;
 

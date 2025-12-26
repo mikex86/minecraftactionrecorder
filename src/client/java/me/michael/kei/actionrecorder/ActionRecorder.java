@@ -267,6 +267,8 @@ public class ActionRecorder {
     private static final Timer timer = new Timer(TARGET_FRAME_RATE);
 
     public static void captureState(Minecraft minecraft) {
+        // InputFaker.doRandomInput();
+
         // set to target resolution if not equal
         if (minecraft.getWindow().getWidth() != TARGET_WINDOW_WIDTH || minecraft.getWindow().getHeight() != TARGET_WINDOW_HEIGHT) {
             minecraft.getWindow().setWindowed(TARGET_WINDOW_WIDTH, TARGET_WINDOW_HEIGHT);
@@ -311,7 +313,7 @@ public class ActionRecorder {
         ); // this one has an effect on click in the inventory screen
 
         trackSprint(minecraft.player.isSprinting()); // log actual sprinting state
-        trackJump(minecraft.options.keyJump.isDown() && (minecraft.player.onGround() || minecraft.player.isInWater())); // only log jump if on ground or in water, where jump will move up
+        trackJump(minecraft.options.keyJump.isDown() && (minecraft.player.onGround() || minecraft.player.isInWater() || minecraft.player.getAbilities().flying)); // only log jump if on ground or in water or when flying, where jump will move up
         trackDropItem(minecraft.options.keyDrop.isDown());
 
         // hotbar
