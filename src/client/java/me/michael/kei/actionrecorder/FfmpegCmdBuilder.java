@@ -59,7 +59,7 @@ public class FfmpegCmdBuilder {
             addSoftwareRgbEncoder(cmd, cpuFilterChain);
         } else {
             switch (vendor) {
-                case NVIDIA -> addNvenc(cmd, cpuFilterChain);
+                case NVIDIA -> addNvenc(cmd, cpuFilterChain, fps);
                 case AMD -> {
                     if (os == Os.WINDOWS) addAmf(cmd, cpuFilterChain);
                     else                  addVaapi(cmd, vaapiDevice, vaapiFilterChain);
@@ -85,17 +85,26 @@ public class FfmpegCmdBuilder {
         return cmd;
     }
 
-    private static void addNvenc(List<String> cmd, String cpuFilterChain) {
-        // NVIDIA NVENC H.264
+    private static void addNvenc(List<String> cmd, String cpuFilterChain, int fps) {
+        // NVIDIA NVENC H.264 tuned for strong compression while keeping artifacts low.
+        int gop = Math.max(fps * 2, 30); // ~2 second keyframe interval
         cmd.addAll(Arrays.asList(
                 "-an",
                 "-vf", cpuFilterChain,
                 "-c:v", "h264_nvenc",
-                // Quality/latency trade-offs; adjust as needed:
-                "-preset", "p4",          // p1 (fast) ... p7 (slow/best)
+                "-preset", "p6",          // p1 (fast) ... p7 (slow/best)
                 "-tune", "hq",
+                "-profile:v", "high",
                 "-rc", "vbr",
-                "-cq", "19",
+                "-cq", "22",
+                "-b:v", "8M",
+                "-maxrate", "12M",
+                "-bufsize", "24M",
+                "-rc-lookahead", "32",
+                "-spatial_aq", "1",
+                "-temporal_aq", "1",
+                "-aq-strength", "8",
+                "-g", String.valueOf(gop),
                 "-pix_fmt", "yuv420p"     // required by most players/hw decoders
         ));
     }

@@ -523,8 +523,8 @@ public class ActionRecorder {
                     openChatPressed,
 
                     // mouse
-                    lastLeftClickPressed,
-                    lastRightClickPressed,
+                    lastLeftClickDown,
+                    lastRightClickDown,
             };
             try {
                 // pressedScreenKeys = List<Character>
