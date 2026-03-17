@@ -4,7 +4,10 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "MinecraftMixin",
-    "KeyboardHandlerMixin"
+    "GlCommandEncoderMixin",
+    "KeyboardHandlerMixin",
+    "MouseHandlerMixin",
+    "BlockItemMixin"
   ],
   "injectors": {
     "defaultRequire": 1
