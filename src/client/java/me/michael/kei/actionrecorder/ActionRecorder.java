@@ -283,7 +283,8 @@ public class ActionRecorder {
         lastRightClickPressed = lastRightClickDown != rightClickState && rightClickState; // pressed state is only true on the frame the key is pressed down
         lastRightClickDown = rightClickState;
 
-        boolean anyHeldItemInUse = Objects.requireNonNull(minecraft.player).isUsingItem();
+        Player player = minecraft.player;
+        boolean anyHeldItemInUse = player.isUsingItem();
         lastRightClickActive = lastRightClickPressed || rightClickState && anyHeldItemInUse;
     }
 
@@ -360,7 +361,7 @@ public class ActionRecorder {
         trackHotbarEight(minecraft.options.keyHotbarSlots[7].isDown());
         trackHotbarNine(minecraft.options.keyHotbarSlots[8].isDown());
 
-        trackHotbarIndex(player.getInventory().selected);
+        trackHotbarIndex(player.getInventory().getSelectedSlot());
 
         trackMoveToOffhand(minecraft.options.keySwapOffhand.isDown());
 
