@@ -1,5 +1,6 @@
 package me.michael.kei.actionrecorder;
 
+import me.michael.kei.actionrecorder.mixin.MouseHandlerMixin;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
@@ -37,6 +38,12 @@ public class ActionRecorder {
     private static boolean lastLeftClickDown = false;
     private static boolean lastRightClickPressed = false;
     private static boolean lastRightClickDown = false;
+
+    public static boolean guiLeftMouseClicked = false;
+    public static boolean guiRightMouseClicked = false;
+
+    public static boolean blockWasPlaced = false;
+    public static boolean attackPerformed = false;
 
     private static boolean dropItemPressed = false;
     private static boolean dropItemDown = false;
@@ -276,7 +283,8 @@ public class ActionRecorder {
 
         MultiPlayerGameMode gameMode = minecraft.gameMode;
         boolean isBreakingBlock = gameMode != null && gameMode.isDestroying();
-        lastLeftClickActive = lastLeftClickPressed || leftClickState && isBreakingBlock;
+        boolean anyScreen = minecraft.screen != null;
+        lastLeftClickActive = attackPerformed || (lastLeftClickPressed && anyScreen) || isBreakingBlock;
     }
 
     private static void trackRightClick(boolean rightClickState, Minecraft minecraft) {
@@ -284,8 +292,9 @@ public class ActionRecorder {
         lastRightClickDown = rightClickState;
 
         Player player = minecraft.player;
-        boolean anyHeldItemInUse = player.isUsingItem();
-        lastRightClickActive = lastRightClickPressed || rightClickState && anyHeldItemInUse;
+        boolean anyHeldItemInUse = player != null && player.isUsingItem();
+        boolean anyScreen = minecraft.screen != null;
+        lastRightClickActive = blockWasPlaced || (lastRightClickPressed && anyScreen) || anyHeldItemInUse;
     }
 
     private static final int TARGET_FRAME_RATE = 60;
@@ -330,8 +339,14 @@ public class ActionRecorder {
 
         saveFrame();
 
-        trackLeftClick(minecraft.options.keyAttack.isDown(), minecraft);
-        trackRightClick(minecraft.options.keyUse.isDown(), minecraft);
+        trackLeftClick(minecraft.mouseHandler.isLeftPressed() || guiLeftMouseClicked, minecraft);
+        trackRightClick(minecraft.mouseHandler.isRightPressed() || guiRightMouseClicked, minecraft);
+
+        guiLeftMouseClicked = false;
+        guiRightMouseClicked = false;
+
+        blockWasPlaced = false;
+        attackPerformed = false;
 
         trackYaw(player.getYRot());
         trackPitch(player.getXRot());
@@ -579,7 +594,7 @@ public class ActionRecorder {
                     openChatPressed,
 
                     // mouse
-                    lastLeftClickPressed,
+                    lastLeftClickActive,
                     lastRightClickActive,
             };
             try {

@@ -5,7 +5,9 @@
   "client": [
     "MinecraftMixin",
     "GlCommandEncoderMixin",
-    "KeyboardHandlerMixin"
+    "KeyboardHandlerMixin",
+    "MouseHandlerMixin",
+    "BlockItemMixin"
   ],
   "injectors": {
     "defaultRequire": 1
