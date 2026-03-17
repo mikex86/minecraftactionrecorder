@@ -3,6 +3,7 @@ package me.michael.kei.actionrecorder;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
@@ -272,7 +273,8 @@ public class ActionRecorder {
         lastLeftClickPressed = lastLeftClickDown != leftClickState && leftClickState; // pressed state is only true on the frame the key is pressed down
         lastLeftClickDown = leftClickState;
 
-        boolean isBreakingBlock = Objects.requireNonNull(minecraft.gameMode).isDestroying();
+        MultiPlayerGameMode gameMode = minecraft.gameMode;
+        boolean isBreakingBlock = gameMode != null && gameMode.isDestroying();
         lastLeftClickActive = lastLeftClickPressed || leftClickState && isBreakingBlock;
     }
 
@@ -357,7 +359,7 @@ public class ActionRecorder {
         trackHotbarEight(minecraft.options.keyHotbarSlots[7].isDown());
         trackHotbarNine(minecraft.options.keyHotbarSlots[8].isDown());
 
-        trackHotbarIndex(player.getInventory().getSelectedSlot());
+        trackHotbarIndex(player.getInventory().selected);
 
         trackMoveToOffhand(minecraft.options.keySwapOffhand.isDown());
 

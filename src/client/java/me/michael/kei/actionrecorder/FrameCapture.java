@@ -1,8 +1,6 @@
 package me.michael.kei.actionrecorder;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import com.mojang.blaze3d.systems.RenderSystem;
-import me.michael.kei.actionrecorder.mixin.GlCommandEncoderMixin;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -19,8 +17,7 @@ public class FrameCapture {
     public static void grabMainFramebufferRGB(byte[] rgbOut) {
         Minecraft mc = Minecraft.getInstance();
         RenderTarget target = mc.getMainRenderTarget();
-        GlCommandEncoderMixin commandEncoder = (GlCommandEncoderMixin) RenderSystem.getDevice().createCommandEncoder();
-        int drawFBO = commandEncoder.getDrawFBO();
+        int drawFBO = target.frameBufferId;
 
         int w = target.width;
         int h = target.height;
