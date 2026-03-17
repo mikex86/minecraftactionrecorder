@@ -1,17 +1,22 @@
 package me.michael.kei.actionrecorder;
 
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Player;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 public class ActionRecorder {
+    private static volatile boolean shutdownRequested = false;
 
     private static float lastYaw = 0;
     private static float lastPitch = 0;
@@ -63,6 +68,20 @@ public class ActionRecorder {
 
     private static boolean openChatPressed = false;
     private static boolean openChatDown = false;
+
+    /**
+     * Last right click active has a very specific meaning.
+     * Active means that the click is in fact currently performing some action within the game.
+     * That means e.g. blocking with a shield, or drawing a bow, or the instant of a block place, or an inventory right click.
+     */
+    private static boolean lastRightClickActive = false;
+
+    /**
+     * Last left click active has a very specific meaning.
+     * Active means that the click is in fact currently performing some action within the game.
+     * That means e.g. breaking a block, or the instant of a hit, or the instant of an inventory click.
+     */
+    private static boolean lastLeftClickActive = false;
 
     // Per-frame typed characters when a Screen is open
     public static final List<String> pressedScreenKeys = new ArrayList<>();
@@ -249,14 +268,20 @@ public class ActionRecorder {
         lastCursorY = cursorY;
     }
 
-    private static void trackLeftClick(boolean leftClickState) {
+    private static void trackLeftClick(boolean leftClickState, Minecraft minecraft) {
         lastLeftClickPressed = lastLeftClickDown != leftClickState && leftClickState; // pressed state is only true on the frame the key is pressed down
         lastLeftClickDown = leftClickState;
+
+        boolean isBreakingBlock = Objects.requireNonNull(minecraft.gameMode).isDestroying();
+        lastLeftClickActive = lastLeftClickPressed || leftClickState && isBreakingBlock;
     }
 
-    private static void trackRightClick(boolean rightClickState) {
+    private static void trackRightClick(boolean rightClickState, Minecraft minecraft) {
         lastRightClickPressed = lastRightClickDown != rightClickState && rightClickState; // pressed state is only true on the frame the key is pressed down
         lastRightClickDown = rightClickState;
+
+        boolean anyHeldItemInUse = Objects.requireNonNull(minecraft.player).isUsingItem();
+        lastRightClickActive = lastRightClickPressed || rightClickState && anyHeldItemInUse;
     }
 
     private static final int TARGET_FRAME_RATE = 60;
@@ -267,6 +292,9 @@ public class ActionRecorder {
     private static final Timer timer = new Timer(TARGET_FRAME_RATE);
 
     public static void captureState(Minecraft minecraft) {
+        if (shutdownRequested) {
+            return;
+        }
         // InputFaker.doRandomInput();
 
         // set to target resolution if not equal
@@ -291,17 +319,19 @@ public class ActionRecorder {
     private static void recordCaptureFrame(Minecraft minecraft) {
         LocalPlayer player = minecraft.player;
         if (player == null) {
+            closeWritersAndMarkUploadsFinished();
             pressedScreenKeys.clear();
             return;
         }
 
         saveFrame();
 
-        trackLeftClick(minecraft.options.keyAttack.isDown());
-        trackRightClick(minecraft.options.keyUse.isDown());
+        trackLeftClick(minecraft.options.keyAttack.isDown(), minecraft);
+        trackRightClick(minecraft.options.keyUse.isDown(), minecraft);
 
         trackYaw(player.getYRot());
         trackPitch(player.getXRot());
+
         trackInventoryOpen(minecraft.screen instanceof InventoryScreen);
         trackMoveForward(minecraft.options.keyUp.isDown() && minecraft.screen == null);
         trackMoveBackward(minecraft.options.keyDown.isDown() && minecraft.screen == null);
@@ -366,21 +396,24 @@ public class ActionRecorder {
 
     private static FfmpegPipeWriter videoWriter = null;
     private static ActionLogWriter logWriter = null;
+    private static Path currentVideoCapturePath = null;
+    private static Path currentLogCapturePath = null;
+    private static boolean ffmpegUnavailableLogged = false;
 
-    private static Path getNextCapturePath(String extension) throws IOException {
-        String baseName = "capture";
-        int index = 1;
-        Path path;
-        do {
-            String fileName = String.format("captures/%s_%03d.%s", baseName, index, extension);
-            path = Path.of(fileName);
-            Files.createDirectories(path.getParent());
-            index++;
-        } while (path.toFile().exists());
-        return path;
+    private static Path createNextRecordingDirectory() throws IOException {
+        Path capturesRoot = Path.of("captures");
+        Files.createDirectories(capturesRoot);
+
+        while (true) {
+            Path recordingDir = capturesRoot.resolve(UUID.randomUUID().toString());
+            if (Files.notExists(recordingDir)) {
+                Files.createDirectories(recordingDir);
+                return recordingDir;
+            }
+        }
     }
 
-    private static void saveFrame() {
+    private static synchronized void saveFrame() {
         Minecraft mc = Minecraft.getInstance();
         int width = mc.getWindow().getWidth();
         int height = mc.getWindow().getHeight();
@@ -390,29 +423,48 @@ public class ActionRecorder {
             frameBuffer = new byte[width * height * 3]; // rgb
 
             try {
-                if (videoWriter != null) {
-                    videoWriter.close();
-
-                    videoWriter = null;
+                closeWritersAndMarkUploadsFinished();
+                Path recordingDir = createNextRecordingDirectory();
+                Path videoPath = recordingDir.resolve("video.mp4");
+                Path logPath = recordingDir.resolve("actions.alog");
+                if (!FfmpegRuntimeBootstrap.isReady()) {
+                    if (!ffmpegUnavailableLogged) {
+                        ffmpegUnavailableLogged = true;
+                        System.err.println("[ActionRecorder] FFmpeg unavailable; recording disabled: "
+                                + FfmpegRuntimeBootstrap.getStartupError());
+                    }
+                    return;
                 }
-                if (logWriter != null) {
-                    logWriter.close();
-                    logWriter = null;
-                }
+                String ffmpegExecutable = FfmpegRuntimeBootstrap.getFfmpegExecutable();
                 videoWriter = new FfmpegPipeWriter(
-                        "ffmpeg",
-                        getNextCapturePath("mp4"),
+                        ffmpegExecutable,
+                        videoPath,
                         width, height, TARGET_FRAME_RATE,
                         128
                 );
-                logWriter = new ActionLogWriter(getNextCapturePath("alog"));
+                logWriter = new ActionLogWriter(logPath);
+                currentVideoCapturePath = videoPath;
+                currentLogCapturePath = logPath;
+
+                RecordingUploadDaemon uploadDaemon = RecordingUploadDaemon.getInstance();
+                uploadDaemon.notifyRecordingStarted(videoPath);
+                uploadDaemon.notifyRecordingStarted(logPath);
+
+                if (mc.player != null) {
+                    mc.player.displayClientMessage(
+                            Component.literal("[ActionRecorder] Started recording: " + recordingDir.getFileName()),
+                            false
+                    );
+                }
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
         FrameCapture.grabMainFramebufferRGB(frameBuffer);
         renderCursor(mc.screen != null, frameBuffer);
-        videoWriter.pushFrame(frameBuffer);
+        if (videoWriter != null) {
+            videoWriter.pushFrame(frameBuffer);
+        }
     }
 
     private static final String cursorResourcePath = "/assets/minecraftactionrecorder/cursor.png";
@@ -483,7 +535,7 @@ public class ActionRecorder {
         }
     }
 
-    public static void saveActionState() {
+    public static synchronized void saveActionState() {
         if (logWriter != null) {
             boolean[] states = new boolean[]{
                     // movement
@@ -523,8 +575,8 @@ public class ActionRecorder {
                     openChatPressed,
 
                     // mouse
-                    lastLeftClickDown,
-                    lastRightClickDown,
+                    lastLeftClickPressed,
+                    lastRightClickActive,
             };
             try {
                 // pressedScreenKeys = List<Character>
@@ -532,6 +584,45 @@ public class ActionRecorder {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
+        }
+    }
+
+    public static synchronized void shutdownRecording() {
+        shutdownRequested = true;
+        System.out.println("[ActionRecorder] shutdownRecording start");
+        closeWritersAndMarkUploadsFinished();
+        System.out.println("[ActionRecorder] shutdownRecording done");
+    }
+
+    public static void requestShutdownSignal() {
+        shutdownRequested = true;
+    }
+
+    private static synchronized void closeWritersAndMarkUploadsFinished() {
+        if (videoWriter == null && logWriter == null && currentVideoCapturePath == null && currentLogCapturePath == null) {
+            return;
+        }
+        if (videoWriter != null) {
+            videoWriter.close();
+            videoWriter = null;
+        }
+        if (logWriter != null) {
+            try {
+                logWriter.close();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            logWriter = null;
+        }
+
+        RecordingUploadDaemon uploadDaemon = RecordingUploadDaemon.getInstance();
+        if (currentVideoCapturePath != null) {
+            uploadDaemon.notifyRecordingFinished(currentVideoCapturePath);
+            currentVideoCapturePath = null;
+        }
+        if (currentLogCapturePath != null) {
+            uploadDaemon.notifyRecordingFinished(currentLogCapturePath);
+            currentLogCapturePath = null;
         }
     }
 }

@@ -86,26 +86,28 @@ public class FfmpegCmdBuilder {
     }
 
     private static void addNvenc(List<String> cmd, String cpuFilterChain, int fps) {
-        // NVIDIA NVENC H.264 tuned for strong compression while keeping artifacts low.
-        int gop = Math.max(fps * 2, 30); // ~2 second keyframe interval
+        // NVIDIA NVENC HEVC tuned for high compression with acceptable quality.
+        // Targets a much lower sustained bitrate than the prior H.264 settings.
+        int gop = Math.max(fps * 4, 60); // ~4 second keyframe interval for better compression
         cmd.addAll(Arrays.asList(
                 "-an",
                 "-vf", cpuFilterChain,
-                "-c:v", "h264_nvenc",
+                "-c:v", "hevc_nvenc",
                 "-preset", "p6",          // p1 (fast) ... p7 (slow/best)
                 "-tune", "hq",
-                "-profile:v", "high",
+                "-profile:v", "main",
                 "-rc", "vbr",
-                "-cq", "22",
-                "-b:v", "8M",
-                "-maxrate", "12M",
-                "-bufsize", "24M",
+                "-cq", "28",
+                "-b:v", "3500k",
+                "-maxrate", "5000k",
+                "-bufsize", "10000k",
                 "-rc-lookahead", "32",
                 "-spatial_aq", "1",
                 "-temporal_aq", "1",
-                "-aq-strength", "8",
+                "-aq-strength", "10",
+                "-bf", "3",
                 "-g", String.valueOf(gop),
-                "-pix_fmt", "yuv420p"     // required by most players/hw decoders
+                "-pix_fmt", "yuv420p"     // broad decode compatibility
         ));
     }
 

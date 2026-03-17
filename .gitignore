@@ -38,3 +38,7 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# upload server runtime data
+upload-server-data/
+upload-server/upload-server-data/
