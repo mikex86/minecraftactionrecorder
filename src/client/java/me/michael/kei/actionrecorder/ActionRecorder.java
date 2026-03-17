@@ -1,12 +1,10 @@
 package me.michael.kei.actionrecorder;
 
-import me.michael.kei.actionrecorder.mixin.MouseHandlerMixin;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.telemetry.TelemetryProperty;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 
@@ -39,14 +37,26 @@ public class ActionRecorder {
     private static boolean lastRightClickPressed = false;
     private static boolean lastRightClickDown = false;
 
-    public static boolean guiLeftMouseClicked = false;
-    public static boolean guiRightMouseClicked = false;
-
-    public static boolean blockWasPlaced = false;
-    public static boolean attackPerformed = false;
-
     private static boolean dropItemPressed = false;
     private static boolean dropItemDown = false;
+    private static boolean hotbarOnePressed = false;
+    private static boolean hotbarOneDown = false;
+    private static boolean hotbarTwoPressed = false;
+    private static boolean hotbarTwoDown = false;
+    private static boolean hotbarThreePressed = false;
+    private static boolean hotbarThreeDown = false;
+    private static boolean hotbarFourPressed = false;
+    private static boolean hotbarFourDown = false;
+    private static boolean hotbarFivePressed = false;
+    private static boolean hotbarFiveDown = false;
+    private static boolean hotbarSixPressed = false;
+    private static boolean hotbarSixDown = false;
+    private static boolean hotbarSevenPressed = false;
+    private static boolean hotbarSevenDown = false;
+    private static boolean hotbarEightPressed = false;
+    private static boolean hotbarEightDown = false;
+    private static boolean hotbarNinePressed = false;
+    private static boolean hotbarNineDown = false;
 
     private static int hotbarIndex = 0;
     private static boolean hotbarMoveLeft = false;
@@ -87,7 +97,7 @@ public class ActionRecorder {
             yawDelta = 0;
             return;
         }
-        yawDelta = (float) Math.toRadians(yaw - lastYaw); // log in units radians
+        yawDelta = yaw - lastYaw;
         lastYaw = yaw;
     }
 
@@ -96,7 +106,7 @@ public class ActionRecorder {
             pitchDelta = 0;
             return;
         }
-        pitchDelta = (float) Math.toRadians(pitch - lastPitch);
+        pitchDelta = pitch - lastPitch;
         lastPitch = pitch;
     }
 
@@ -161,6 +171,51 @@ public class ActionRecorder {
         dropItemDown = dropDown;
     }
 
+    private static void trackHotbarOne(boolean hotbarOne) {
+        hotbarOnePressed = hotbarOneDown != hotbarOne && hotbarOne;
+        hotbarOneDown = hotbarOne;
+    }
+
+    private static void trackHotbarTwo(boolean hotbarTwo) {
+        hotbarTwoPressed = hotbarTwoDown != hotbarTwo && hotbarTwo;
+        hotbarTwoDown = hotbarTwo;
+    }
+
+    private static void trackHotbarThree(boolean hotbarThree) {
+        hotbarThreePressed = hotbarThreeDown != hotbarThree && hotbarThree;
+        hotbarThreeDown = hotbarThree;
+    }
+
+    private static void trackHotbarFour(boolean hotbarFour) {
+        hotbarFourPressed = hotbarFourDown != hotbarFour && hotbarFour;
+        hotbarFourDown = hotbarFour;
+    }
+
+    private static void trackHotbarFive(boolean hotbarFive) {
+        hotbarFivePressed = hotbarFiveDown != hotbarFive && hotbarFive;
+        hotbarFiveDown = hotbarFive;
+    }
+
+    private static void trackHotbarSix(boolean hotbarSix) {
+        hotbarSixPressed = hotbarSixDown != hotbarSix && hotbarSix;
+        hotbarSixDown = hotbarSix;
+    }
+
+    private static void trackHotbarSeven(boolean hotbarSeven) {
+        hotbarSevenPressed = hotbarSevenDown != hotbarSeven && hotbarSeven;
+        hotbarSevenDown = hotbarSeven;
+    }
+
+    private static void trackHotbarEight(boolean hotbarEight) {
+        hotbarEightPressed = hotbarEightDown != hotbarEight && hotbarEight;
+        hotbarEightDown = hotbarEight;
+    }
+
+    private static void trackHotbarNine(boolean hotbarNine) {
+        hotbarNinePressed = hotbarNineDown != hotbarNine && hotbarNine;
+        hotbarNineDown = hotbarNine;
+    }
+
     private static void trackHotbarIndex(int index) {
         if (index != hotbarIndex) {
             int delta = index - hotbarIndex;
@@ -220,18 +275,15 @@ public class ActionRecorder {
 
         MultiPlayerGameMode gameMode = minecraft.gameMode;
         boolean isBreakingBlock = gameMode != null && gameMode.isDestroying();
-        boolean anyScreen = minecraft.screen != null;
-        lastLeftClickActive = attackPerformed || (lastLeftClickPressed && anyScreen) || isBreakingBlock;
+        lastLeftClickActive = lastLeftClickPressed || leftClickState && isBreakingBlock;
     }
 
     private static void trackRightClick(boolean rightClickState, Minecraft minecraft) {
         lastRightClickPressed = lastRightClickDown != rightClickState && rightClickState; // pressed state is only true on the frame the key is pressed down
         lastRightClickDown = rightClickState;
 
-        Player player = minecraft.player;
-        boolean anyHeldItemInUse = player != null && player.isUsingItem();
-        boolean anyScreen = minecraft.screen != null;
-        lastRightClickActive = blockWasPlaced || (lastRightClickPressed && anyScreen) || anyHeldItemInUse;
+        boolean anyHeldItemInUse = Objects.requireNonNull(minecraft.player).isUsingItem();
+        lastRightClickActive = lastRightClickPressed || rightClickState && anyHeldItemInUse;
     }
 
     private static final int TARGET_FRAME_RATE = 60;
@@ -274,14 +326,10 @@ public class ActionRecorder {
             return;
         }
 
-        trackLeftClick(minecraft.mouseHandler.isLeftPressed() || guiLeftMouseClicked, minecraft);
-        trackRightClick(minecraft.mouseHandler.isRightPressed() || guiRightMouseClicked, minecraft);
+        saveFrame();
 
-        guiLeftMouseClicked = false;
-        guiRightMouseClicked = false;
-
-        blockWasPlaced = false;
-        attackPerformed = false;
+        trackLeftClick(minecraft.options.keyAttack.isDown(), minecraft);
+        trackRightClick(minecraft.options.keyUse.isDown(), minecraft);
 
         trackYaw(player.getYRot());
         trackPitch(player.getXRot());
@@ -300,7 +348,18 @@ public class ActionRecorder {
         trackJump(minecraft.options.keyJump.isDown() && (minecraft.player.onGround() || minecraft.player.isInWater() || minecraft.player.getAbilities().flying)); // only log jump if on ground or in water or when flying, where jump will move up
         trackDropItem(minecraft.options.keyDrop.isDown());
 
-        trackHotbarIndex(player.getInventory().getSelectedSlot());
+        // hotbar
+        trackHotbarOne(minecraft.options.keyHotbarSlots[0].isDown());
+        trackHotbarTwo(minecraft.options.keyHotbarSlots[1].isDown());
+        trackHotbarThree(minecraft.options.keyHotbarSlots[2].isDown());
+        trackHotbarFour(minecraft.options.keyHotbarSlots[3].isDown());
+        trackHotbarFive(minecraft.options.keyHotbarSlots[4].isDown());
+        trackHotbarSix(minecraft.options.keyHotbarSlots[5].isDown());
+        trackHotbarSeven(minecraft.options.keyHotbarSlots[6].isDown());
+        trackHotbarEight(minecraft.options.keyHotbarSlots[7].isDown());
+        trackHotbarNine(minecraft.options.keyHotbarSlots[8].isDown());
+
+        trackHotbarIndex(player.getInventory().selected);
 
         trackMoveToOffhand(minecraft.options.keySwapOffhand.isDown());
 
@@ -328,7 +387,6 @@ public class ActionRecorder {
         }
         prevIsScreenOpen = minecraft.screen != null;
 
-        saveFrame();
         saveActionState();
         Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
         pressedScreenKeys.clear();
@@ -496,15 +554,15 @@ public class ActionRecorder {
                     dropItemPressed,
 
                     // hotbar
-                    hotbarIndex == 0,
-                    hotbarIndex == 1,
-                    hotbarIndex == 2,
-                    hotbarIndex == 3,
-                    hotbarIndex == 4,
-                    hotbarIndex == 5,
-                    hotbarIndex == 6,
-                    hotbarIndex == 7,
-                    hotbarIndex == 8,
+                    hotbarOnePressed,
+                    hotbarTwoPressed,
+                    hotbarThreePressed,
+                    hotbarFourPressed,
+                    hotbarFivePressed,
+                    hotbarSixPressed,
+                    hotbarSevenPressed,
+                    hotbarEightPressed,
+                    hotbarNinePressed,
 
                     hotbarMoveLeft,
                     hotbarMoveRight,
@@ -519,7 +577,7 @@ public class ActionRecorder {
                     openChatPressed,
 
                     // mouse
-                    lastLeftClickActive,
+                    lastLeftClickPressed,
                     lastRightClickActive,
             };
             try {
