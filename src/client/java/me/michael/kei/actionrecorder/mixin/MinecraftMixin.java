@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Minecraft.class)
 public class MinecraftMixin {
+
     @Inject(method = "runTick", at = @At("TAIL"))
     private void runTick(CallbackInfo ci) {
         @SuppressWarnings("DataFlowIssue") Minecraft mc = (Minecraft) (Object) this;

@@ -238,8 +238,8 @@ public class ActionRecorder {
 
     private static final int TARGET_FRAME_RATE = 60;
 
-    private static final int TARGET_WINDOW_WIDTH = 1920;
-    private static final int TARGET_WINDOW_HEIGHT = 1080;
+    private static int lastWidth =  0;
+    private static int lastHeight = 0;
 
     private static final Timer timer = new Timer(TARGET_FRAME_RATE);
 
@@ -250,12 +250,19 @@ public class ActionRecorder {
         // InputFaker.doRandomInput();
 
         // set to target resolution if not equal
-        if (minecraft.getWindow().getWidth() != TARGET_WINDOW_WIDTH || minecraft.getWindow().getHeight() != TARGET_WINDOW_HEIGHT) {
+        /*if (minecraft.getWindow().getWidth() != TARGET_WINDOW_WIDTH || minecraft.getWindow().getHeight() != TARGET_WINDOW_HEIGHT) {
             minecraft.getWindow().setWindowed(TARGET_WINDOW_WIDTH, TARGET_WINDOW_HEIGHT);
             minecraft.resizeDisplay();
             if (minecraft.getMainRenderTarget().width != TARGET_WINDOW_WIDTH || minecraft.getMainRenderTarget().height != TARGET_WINDOW_HEIGHT) {
                 return;
             }
+        }*/
+
+        if (minecraft.getWindow().getWidth() != lastWidth || minecraft.getWindow().getHeight() != lastHeight) {
+            lastWidth = minecraft.getWindow().getWidth();
+            lastHeight = minecraft.getWindow().getHeight();
+            resetRecording();
+            return;
         }
 
         timer.advanceTime();
@@ -268,11 +275,15 @@ public class ActionRecorder {
     private static boolean prevIsScreenOpen = false;
     private static long timeScreenOpened = 0;
 
+    private static void resetRecording() {
+        closeWritersAndMarkUploadsFinished();
+        pressedScreenKeys.clear();
+    }
+
     private static void recordCaptureFrame(Minecraft minecraft) {
         LocalPlayer player = minecraft.player;
         if (player == null) {
-            closeWritersAndMarkUploadsFinished();
-            pressedScreenKeys.clear();
+            resetRecording();
             return;
         }
 
