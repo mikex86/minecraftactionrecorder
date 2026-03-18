@@ -551,9 +551,9 @@ public class InputFaker {
         }
 
         selectedWeaponType = weaponChoice.weaponType;
-        if (player.getInventory().selected != weaponChoice.slot) {
+        if (player.getInventory().getSelectedSlot() != weaponChoice.slot) {
             queueHotbarSlot(weaponChoice.slot);
-            ItemStack equippedStack = player.getInventory().getItem(player.getInventory().selected);
+            ItemStack equippedStack = player.getInventory().getItem(player.getInventory().getSelectedSlot());
             WeaponType equippedWeaponType = detectWeaponType(player, equippedStack);
             if (equippedWeaponType != WeaponType.NONE) {
                 // Keep fighting with what is currently equipped while hotbar switch is in progress.
@@ -3054,7 +3054,7 @@ public class InputFaker {
         }
 
         if (swordSlot == -1 && axeSlot == -1 && bowSlot == -1) {
-            int currentSlot = player.getInventory().selected;
+            int currentSlot = player.getInventory().getSelectedSlot();
             ItemStack currentStack = player.getInventory().getItem(currentSlot);
             if (!currentStack.isEmpty()) {
                 return new WeaponChoice(currentSlot, WeaponType.NONE);
@@ -3075,7 +3075,7 @@ public class InputFaker {
         boolean hasMeleeOption = swordSlot != -1 || axeSlot != -1;
         boolean targetIsSkeleton = target instanceof AbstractSkeleton;
         if (bowSlot != -1) {
-            boolean currentlyUsingBowSlot = player.getInventory().selected == bowSlot;
+            boolean currentlyUsingBowSlot = player.getInventory().getSelectedSlot() == bowSlot;
             boolean skeletonTooCloseForBow = hasMeleeOption
                     && targetIsSkeleton
                     && distance <= BOW_SKELETON_MELEE_SWITCH_DISTANCE;
@@ -3498,7 +3498,7 @@ public class InputFaker {
             return -1;
         }
 
-        int selectedSlot = player.getInventory().selected;
+        int selectedSlot = player.getInventory().getSelectedSlot();
         if (selectedSlot == pendingHotbarSlot) {
             pendingHotbarSlot = -1;
             hotbarSwitchPulseCooldownTicks = 0;

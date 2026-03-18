@@ -302,7 +302,7 @@ public class ActionRecorder {
         trackJump(minecraft.options.keyJump.isDown() && (minecraft.player.onGround() || minecraft.player.isInWater() || minecraft.player.getAbilities().flying)); // only log jump if on ground or in water or when flying, where jump will move up
         trackDropItem(minecraft.options.keyDrop.isDown());
 
-        trackHotbarIndex(player.getInventory().selected);
+        trackHotbarIndex(player.getInventory().getSelectedSlot());
 
         trackMoveToOffhand(minecraft.options.keySwapOffhand.isDown());
 
