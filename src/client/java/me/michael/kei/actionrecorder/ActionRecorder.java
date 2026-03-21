@@ -1,14 +1,10 @@
 package me.michael.kei.actionrecorder;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import me.michael.kei.actionrecorder.mixin.MouseHandlerMixin;
-import net.minecraft.client.Camera;
-import net.minecraft.client.KeyMapping;
+import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.telemetry.TelemetryProperty;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 
@@ -17,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 public class ActionRecorder {
@@ -25,7 +20,7 @@ public class ActionRecorder {
 
     private static float lastYaw = 0;
     private static float lastPitch = 0;
-    private static boolean lastInventoryOpenState = false;
+    private static boolean lastScreenOpenState = false;
     private static boolean lastForwardState = false;
     private static boolean lastBackwardState = false;
     private static boolean lastLeftState = false;
@@ -76,6 +71,10 @@ public class ActionRecorder {
      */
     private static boolean lastLeftClickActive = false;
 
+    private static boolean isNormalPerspective = true;
+    private static boolean isFrontF5Perspective = false;
+    private static boolean isBackF5Perspective = false;
+
     // Per-frame typed characters when a Screen is open
     public static final List<String> pressedScreenKeys = new ArrayList<>();
 
@@ -102,11 +101,11 @@ public class ActionRecorder {
         lastPitch = pitch;
     }
 
-    private static void trackInventoryOpen(boolean inventoryOpenState) {
-        if (lastInventoryOpenState == inventoryOpenState) {
+    private static void trackScreenOpen(boolean screenOpenState) {
+        if (lastScreenOpenState == screenOpenState) {
             return;
         }
-        lastInventoryOpenState = inventoryOpenState;
+        lastScreenOpenState = screenOpenState;
     }
 
     private static void trackMoveForward(boolean forwardState) {
@@ -238,7 +237,7 @@ public class ActionRecorder {
 
     private static final int TARGET_FRAME_RATE = 60;
 
-    private static int lastWidth =  0;
+    private static int lastWidth = 0;
     private static int lastHeight = 0;
 
     private static final Timer timer = new Timer(TARGET_FRAME_RATE);
@@ -249,6 +248,7 @@ public class ActionRecorder {
         }
         // InputFaker.doRandomInput();
 
+        // set to target resolution if not equal
         // set to target resolution if not equal
         /*if (minecraft.getWindow().getWidth() != TARGET_WINDOW_WIDTH || minecraft.getWindow().getHeight() != TARGET_WINDOW_HEIGHT) {
             minecraft.getWindow().setWindowed(TARGET_WINDOW_WIDTH, TARGET_WINDOW_HEIGHT);
@@ -286,6 +286,11 @@ public class ActionRecorder {
             resetRecording();
             return;
         }
+        CameraType cameraType = Minecraft.getInstance().options.getCameraType();
+
+        isNormalPerspective = cameraType == CameraType.FIRST_PERSON;
+        isBackF5Perspective = cameraType == CameraType.THIRD_PERSON_BACK;
+        isFrontF5Perspective = cameraType == CameraType.THIRD_PERSON_FRONT;
 
         trackLeftClick(minecraft.mouseHandler.isLeftPressed() || guiLeftMouseClicked, minecraft);
         trackRightClick(minecraft.mouseHandler.isRightPressed() || guiRightMouseClicked, minecraft);
@@ -299,7 +304,7 @@ public class ActionRecorder {
         trackYaw(player.getYRot());
         trackPitch(player.getXRot());
 
-        trackInventoryOpen(minecraft.screen instanceof InventoryScreen);
+        trackScreenOpen(minecraft.screen != null);
         trackMoveForward(minecraft.options.keyUp.isDown() && minecraft.screen == null);
         trackMoveBackward(minecraft.options.keyDown.isDown() && minecraft.screen == null);
         trackMoveLeft(minecraft.options.keyLeft.isDown() && minecraft.screen == null);
@@ -309,9 +314,9 @@ public class ActionRecorder {
                 (InputConstants.isKeyDown(minecraft.getWindow().getWindow(), InputConstants.KEY_LSHIFT) && (minecraft.screen != null) && (lastLeftClickActive || lastRightClickActive))
         ); // this one has an effect on click in the inventory screen
 
-        trackSprint(minecraft.player.isSprinting()); // log actual sprinting state
         trackJump(minecraft.options.keyJump.isDown() && (minecraft.player.onGround() || minecraft.player.isInWater() || minecraft.player.getAbilities().flying)); // only log jump if on ground or in water or when flying, where jump will move up
         trackDropItem(minecraft.options.keyDrop.isDown());
+        trackSprint(minecraft.player.isSprinting() || (minecraft.options.keySprint.isDown() && dropItemPressed)); // log actual sprinting state
 
         trackHotbarIndex(player.getInventory().selected);
 
@@ -501,7 +506,7 @@ public class ActionRecorder {
                     lastLeftState,
                     lastRightState,
 
-                    lastInventoryOpenState,
+                    lastScreenOpenState,
 
                     lastCrouchState,
                     lastSprintState,
@@ -534,6 +539,11 @@ public class ActionRecorder {
                     // mouse
                     lastLeftClickActive,
                     lastRightClickActive,
+
+                    // perspective
+                    isNormalPerspective,
+                    isFrontF5Perspective,
+                    isBackF5Perspective
             };
             try {
                 // pressedScreenKeys = List<Character>
