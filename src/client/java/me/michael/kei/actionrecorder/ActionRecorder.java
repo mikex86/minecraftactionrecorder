@@ -1,10 +1,14 @@
 package me.michael.kei.actionrecorder;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import me.michael.kei.actionrecorder.mixin.MouseHandlerMixin;
+import net.minecraft.client.Camera;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.telemetry.TelemetryProperty;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 
@@ -13,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 public class ActionRecorder {
@@ -271,11 +276,15 @@ public class ActionRecorder {
     private static boolean prevIsScreenOpen = false;
     private static long timeScreenOpened = 0;
 
+    private static void resetRecording() {
+        closeWritersAndMarkUploadsFinished();
+        pressedScreenKeys.clear();
+    }
+
     private static void recordCaptureFrame(Minecraft minecraft) {
         LocalPlayer player = minecraft.player;
         if (player == null) {
             resetRecording();
-            pressedScreenKeys.clear();
             return;
         }
 
@@ -372,7 +381,7 @@ public class ActionRecorder {
             frameBuffer = new byte[width * height * 3]; // rgb
 
             try {
-                resetRecording();
+                closeWritersAndMarkUploadsFinished();
                 Path recordingDir = createNextRecordingDirectory();
                 Path videoPath = recordingDir.resolve("video.mp4");
                 Path logPath = recordingDir.resolve("actions.alog");
@@ -539,7 +548,7 @@ public class ActionRecorder {
     public static synchronized void shutdownRecording() {
         shutdownRequested = true;
         System.out.println("[ActionRecorder] shutdownRecording start");
-        resetRecording();
+        closeWritersAndMarkUploadsFinished();
         System.out.println("[ActionRecorder] shutdownRecording done");
     }
 
@@ -547,7 +556,7 @@ public class ActionRecorder {
         shutdownRequested = true;
     }
 
-    private static synchronized void resetRecording() {
+    private static synchronized void closeWritersAndMarkUploadsFinished() {
         if (videoWriter == null && logWriter == null && currentVideoCapturePath == null && currentLogCapturePath == null) {
             return;
         }
