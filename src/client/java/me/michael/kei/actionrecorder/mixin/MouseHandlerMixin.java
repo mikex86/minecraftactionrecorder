@@ -14,7 +14,7 @@ public class MouseHandlerMixin {
         method = "onPress(JIII)V",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/gui/screens/Screen;mouseClicked(DDI)Z"
+            target = "Lnet/minecraft/client/gui/screens/Screen;afterMouseAction()V"
         )
     )
     private void beforeMouseClicked(long window, int button, int action, int mods, CallbackInfo ci) {

@@ -146,8 +146,8 @@ public final class HardwareIdentity {
             for (int i = 0; i < dimms.size(); i++) {
                 PhysicalMemory dimm = dimms.get(i);
                 putIfValue(material, "ram." + i + ".manufacturer", dimm.getManufacturer());
-                putIfValue(material, "ram." + i + ".part", dimm.getPartNumber());
-                putIfValue(material, "ram." + i + ".serial", dimm.getSerialNumber());
+                putIfValue(material, "ram." + i + ".part", callOptionalStringMethod(dimm, "getPartNumber"));
+                putIfValue(material, "ram." + i + ".serial", callOptionalStringMethod(dimm, "getSerialNumber"));
                 putIfValue(material, "ram." + i + ".type", dimm.getMemoryType());
                 putIfValue(material, "ram." + i + ".capacity", Long.toString(dimm.getCapacity()));
                 putIfValue(material, "ram." + i + ".clock", Long.toString(dimm.getClockSpeed()));
@@ -165,6 +165,18 @@ public final class HardwareIdentity {
             return;
         }
         material.add(key + "=" + normalized);
+    }
+
+    private static String callOptionalStringMethod(Object target, String methodName) {
+        if (target == null) {
+            return null;
+        }
+        try {
+            Object value = target.getClass().getMethod(methodName).invoke(target);
+            return value instanceof String s ? s : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static String sha256Hex(byte[] bytes) {
