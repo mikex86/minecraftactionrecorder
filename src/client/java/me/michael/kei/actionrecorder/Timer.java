@@ -47,6 +47,14 @@ public class Timer {
      * Accumulated time not yet converted to ticks
      */
     public float passedTime = 0.0F;
+    /**
+     * Elapsed scaled time in seconds for this update
+     */
+    public float deltaSeconds = 0.0F;
+    /**
+     * Elapsed scaled time in ticks for this update
+     */
+    public float deltaTicks = 0.0F;
 
     /**
      * Creates a new timer with specified tick rate.
@@ -76,8 +84,12 @@ public class Timer {
             passedNs = MAX_NS_PER_UPDATE;
         }
 
+        // Store scaled elapsed time for frame-rate independent systems.
+        this.deltaSeconds = (float) passedNs * this.timeScale / NS_PER_SECOND;
+        this.deltaTicks = this.deltaSeconds * this.ticksPerSecond;
+
         // Calculate current FPS
-        this.fps = (float) (NS_PER_SECOND / passedNs);
+        this.fps = passedNs > 0L ? (float) (NS_PER_SECOND / passedNs) : 0.0F;
 
         // Calculate elapsed time in ticks
         this.passedTime += (float) passedNs * this.timeScale * this.ticksPerSecond / NS_PER_SECOND;

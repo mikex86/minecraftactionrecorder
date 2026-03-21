@@ -5,16 +5,19 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.AbstractSkeleton;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.phys.Vec3;
 
@@ -57,6 +60,9 @@ public class InputFaker {
     }
 
     private record SkeletonJukePlan(boolean shouldJuke, int strafeDirection, boolean retreat, boolean urgent) {
+    }
+
+    private record MouseDelta(double yaw, double pitch) {
     }
 
     enum Direction {
@@ -124,6 +130,7 @@ public class InputFaker {
     private static final int CREEPER_RETREAT_BURST_MIN_TICKS = 18;
     private static final int CREEPER_RETREAT_BURST_MAX_TICKS = 34;
     private static final int HOTBAR_SWITCH_PULSE_INTERVAL_TICKS = 1;
+    private static final int MAX_FOOD_LEVEL = 20;
     private static final double ARROW_EVADE_SEARCH_RADIUS = 6.0;
     private static final double ARROW_EVADE_MIN_CLOSING_SPEED = 0.11;
     private static final double ARROW_EVADE_MAX_TIME_TO_IMPACT_TICKS = 13.0;
@@ -134,10 +141,10 @@ public class InputFaker {
     private static final double AXE_SAFE_MAX_DISTANCE = 2.75;
     private static final double SWORD_ATTACK_RANGE = 3.1;
     private static final double AXE_ATTACK_RANGE = 3.25;
-    private static final double BOW_ENGAGE_MIN_DISTANCE = 3.8;
-    private static final double BOW_ENGAGE_HYSTERESIS_DISTANCE = 2.9;
-    private static final double BOW_SKELETON_MELEE_SWITCH_DISTANCE = 5.4;
-    private static final double BOW_SKELETON_ONLY_AT_DISTANCE = 5.3;
+    private static final double BOW_ENGAGE_MIN_DISTANCE = 6.2;
+    private static final double BOW_ENGAGE_HYSTERESIS_DISTANCE = 5.2;
+    private static final double BOW_SKELETON_MELEE_SWITCH_DISTANCE = 6.8;
+    private static final double BOW_SKELETON_ONLY_AT_DISTANCE = 7.0;
     private static final double BOW_SAFE_MIN_DISTANCE = 4.5;
     private static final double BOW_SAFE_MAX_DISTANCE = 10.4;
     private static final double BOW_ATTACK_RANGE = 14.0;
@@ -149,10 +156,7 @@ public class InputFaker {
     private static final int TARGET_MOVEMENT_CHECK_MAX_TICKS = 6;
     private static final int CORRECTION_WINDOW_MIN_TICKS = 2;
     private static final int CORRECTION_WINDOW_MAX_TICKS = 8;
-    private static final double MOVEMENT_RECHECK_ANGLE_THRESHOLD = 0.7;
-    private static final double AIM_BEHIND_YAW_THRESHOLD = 8.0;
-    private static final double AIM_BEHIND_PITCH_THRESHOLD = 6.2;
-    private static final int AIM_BEHIND_TRIGGER_TICKS = 3;
+
     private static final int SKELETON_KILL_COMMIT_MIN_TICKS = 34;
     private static final int SKELETON_KILL_COMMIT_MAX_TICKS = 62;
     private static int nextMovementTicks = randomMovementDuration();
@@ -160,6 +164,10 @@ public class InputFaker {
     private static int tickCtr = 0;
     private static Direction currentDirection = Direction.NONE;
     private static final Timer timer = new Timer(20.0f);
+    private static final double FRAME_SIMULATION_RATE = 120.0F;
+    private static final double FRAME_SIMULATION_STEP_SECONDS = 1.0 / FRAME_SIMULATION_RATE;
+    private static final int MAX_FRAME_SIMULATION_STEPS = 8;
+    private static double frameSimulationAccumulatorSeconds = 0.0;
 
     private static boolean jump = false;
     private static boolean useItem = false;
@@ -254,6 +262,10 @@ public class InputFaker {
     private static double correctionTargetPitchError = 0;
     private static double combatAimYawVelocity = 0;
     private static double combatAimPitchVelocity = 0;
+    private static double aimHumanReactionScale = 1.0;
+    private static double aimHumanCorrectionScale = 1.0;
+    private static double aimHumanJitterScale = 1.0;
+    private static double aimHumanMicroSaccadeBias = 0.0;
     private static double lastTargetYawError = 0;
     private static double lastTargetPitchError = 0;
     private static double lastTargetAngularSpeed = 0;
@@ -268,6 +280,8 @@ public class InputFaker {
     private static boolean combatUseItem = false;
     private static boolean combatActive = false;
     private static boolean hasObservedTargetError = false;
+    private static boolean foodConsumptionObjectiveActive = false;
+    private static int foodConsumptionObjectiveSlot = -1;
     private static int pendingHotbarSlot = -1;
     private static int hotbarSwitchPulseCooldownTicks = 0;
     private static int hotbarSwitchPulseAttempts = 0;
@@ -275,6 +289,12 @@ public class InputFaker {
     private static int lastProcessedHurtTimestamp = -1;
     private static final Map<Integer, Integer> skeletonHitCounts = new HashMap<>();
     private static final Map<Integer, Integer> skeletonLastHitTicks = new HashMap<>();
+    private static double naturalMouseNoiseYaw = 0.0;
+    private static double naturalMouseNoisePitch = 0.0;
+    private static double naturalMouseNoisePhase = random.nextDouble() * Math.PI * 2.0;
+    private static int naturalMouseBurstTicks = 0;
+    private static double naturalMouseBurstYaw = 0.0;
+    private static double naturalMouseBurstPitch = 0.0;
 
     private static boolean shouldPerformAnimation = false;
 
@@ -287,7 +307,27 @@ public class InputFaker {
         for (int i = 0; i < timer.ticks; i++) {
             doTick();
         }
-        doFrame();
+        advanceFrameSimulation();
+    }
+
+    private static void advanceFrameSimulation() {
+        double deltaSeconds = Math.max(0.0, timer.deltaSeconds);
+        if (deltaSeconds <= 0.0) {
+            deltaSeconds = FRAME_SIMULATION_STEP_SECONDS;
+        }
+
+        frameSimulationAccumulatorSeconds = Math.min(
+                frameSimulationAccumulatorSeconds + deltaSeconds,
+                FRAME_SIMULATION_STEP_SECONDS * MAX_FRAME_SIMULATION_STEPS
+        );
+
+        int simulatedSteps = 0;
+        while (frameSimulationAccumulatorSeconds >= FRAME_SIMULATION_STEP_SECONDS
+                && simulatedSteps < MAX_FRAME_SIMULATION_STEPS) {
+            doFrame();
+            frameSimulationAccumulatorSeconds -= FRAME_SIMULATION_STEP_SECONDS;
+            simulatedSteps++;
+        }
     }
 
     private static void doTick() {
@@ -303,7 +343,7 @@ public class InputFaker {
 
             // select random item in hotbar
             int slot = random.nextInt(Inventory.getSelectionSize()); // 0..8
-            if (player != null && !combatActive) {
+            if (player != null && !combatActive && !foodConsumptionObjectiveActive) {
                 queueHotbarSlot(slot);
                 Camera mainCamera = mc.gameRenderer.getMainCamera();
                 startLookAnimation(mainCamera);
@@ -324,6 +364,8 @@ public class InputFaker {
         boolean useDown = player != null && useItem;
         boolean attackDown = false;
         boolean sprintDown = false;
+        boolean shouldShield = false;
+        boolean foodObjectiveRunning = false;
 
         if (combatActive) {
             moveLeft = combatMoveLeft;
@@ -336,12 +378,30 @@ public class InputFaker {
             sprintDown = combatSprint;
         }
         if (player != null) {
+            if (combatActive && foodConsumptionObjectiveActive) {
+                abortFoodConsumptionObjective();
+            }
+            if (!combatActive) {
+                shouldShield = shouldRaiseShield(player, combatTarget);
+                if (foodConsumptionObjectiveActive) {
+                    foodObjectiveRunning = updateFoodConsumptionObjective(player, shouldShield || mc.screen != null);
+                } else if (!shouldShield && player.getFoodData().needsFood() && mc.screen == null) {
+                    int foodSlot = findBestHotbarFoodSlot(player);
+                    if (foodSlot >= 0) {
+                        startFoodConsumptionObjective(foodSlot);
+                        foodObjectiveRunning = updateFoodConsumptionObjective(player, false);
+                    }
+                }
+            }
             if (combatActive) {
                 if (combatUseItem) {
                     useDown = true;
                     attackDown = false;
                 }
-            } else if (shouldRaiseShield(player, combatTarget)) {
+            } else if (foodObjectiveRunning) {
+                useDown = true;
+                attackDown = false;
+            } else if (shouldShield) {
                 useDown = true;
                 attackDown = false;
             }
@@ -483,6 +543,18 @@ public class InputFaker {
             randomYawChange += randomRange(-0.04, 0.04);
             randomPitchChange += randomRange(-0.03, 0.03);
         }
+
+        double motionMagnitude = Math.hypot(deltaYaw, deltaPitch);
+        double noiseIntensity = 0.42 + Math.min(0.88, motionMagnitude / 6.0);
+        MouseDelta noisyInput = applyNaturalMouseNoise(
+                randomYawChange,
+                randomPitchChange,
+                yawStepLimit,
+                pitchStepLimit,
+                noiseIntensity
+        );
+        randomYawChange = noisyInput.yaw();
+        randomPitchChange = noisyInput.pitch();
 
         // turn(yawDelta, pitchDelta)
         player.turn(randomYawChange, randomPitchChange);
@@ -1423,12 +1495,65 @@ public class InputFaker {
         }
         lastTargetAngularSpeed = angularSpeed;
 
-        if (targetMovementCheckTicks <= 0) {
-            observedYawError = liveYawError;
-            observedPitchError = livePitchError;
+        boolean movementSampleDue = targetMovementCheckTicks <= 0;
+        if (movementSampleDue) {
             targetMovementCheckTicks = sampleCombatTrackingInterval(distance, closeForSwing, relativeHorizontalSpeed);
         } else {
             targetMovementCheckTicks--;
+        }
+
+        double screenSpaceMovement = Math.hypot(liveYawError - observedYawError, livePitchError - observedPitchError);
+        double surpriseLevel = 0.0;
+        if (targetSwitchSlowTicks > 0) {
+            surpriseLevel += 0.28;
+        }
+        if (player.hurtTime > 0) {
+            surpriseLevel += 0.30;
+        }
+        surpriseLevel += Math.clamp(screenSpaceMovement / 9.0, 0.0, 0.80);
+        surpriseLevel += Math.clamp(angularSpeed / 8.5, 0.0, 0.48);
+        surpriseLevel = Math.clamp(surpriseLevel, 0.0, 1.65);
+        if (surpriseLevel > 0.72) {
+            int surpriseRecoveryTicks = sampleCatchupTicks(distance, Math.max(angularSpeed, screenSpaceMovement));
+            aimBehindTicks = Math.max(aimBehindTicks, surpriseRecoveryTicks);
+        }
+        if (aimBehindTicks > 0) {
+            aimBehindTicks--;
+        }
+
+        boolean forcePerceptionResample = screenSpaceMovement > (closeForSwing ? 2.6 : 4.3) || surpriseLevel > 0.80;
+        if (pendingCorrectionDelayTicks <= 0 && (movementSampleDue || forcePerceptionResample)) {
+            pendingCorrectionDelayTicks = sampleReactionDelayTicks(distance, surpriseLevel, closeForSwing, relativeHorizontalSpeed);
+            pendingCorrectionWindowTicks = sampleCorrectionWindowTicks(distance, Math.max(screenSpaceMovement, angularSpeed));
+        }
+
+        if (pendingCorrectionDelayTicks > 0) {
+            pendingCorrectionDelayTicks--;
+        } else {
+            if (pendingCorrectionWindowTicks <= 0) {
+                pendingCorrectionWindowTicks = sampleCorrectionWindowTicks(distance, Math.max(screenSpaceMovement, angularSpeed));
+            }
+            double perceptionNoiseScale = (0.08 + (surpriseLevel * 0.16) + Math.clamp(distance / 24.0, 0.0, 0.16))
+                    * aimHumanJitterScale;
+            double perceivedYaw = liveYawError
+                    + (random.nextGaussian() * perceptionNoiseScale)
+                    + (aimHumanMicroSaccadeBias * (0.35 + random.nextDouble() * 0.65));
+            double perceivedPitch = livePitchError + (random.nextGaussian() * perceptionNoiseScale * 0.72);
+
+            double correctionGain = (0.18
+                    + (1.0 / Math.max(1.0, pendingCorrectionWindowTicks))
+                    + Math.clamp(relativeHorizontalSpeed * 1.5, 0.0, 0.22)
+                    + (correctionTicksRemaining > 0 ? 0.16 : 0.0))
+                    * aimHumanCorrectionScale;
+            correctionGain = Math.clamp(correctionGain, 0.12, 0.86);
+
+            correctionTargetYawError = lerp(correctionGain, correctionTargetYawError, perceivedYaw);
+            correctionTargetPitchError = lerp(correctionGain, correctionTargetPitchError, perceivedPitch);
+
+            double memoryBlend = Math.clamp(0.30 + (0.16 * (1.0 - surpriseLevel)), 0.18, 0.52);
+            observedYawError = lerp(memoryBlend, observedYawError, correctionTargetYawError);
+            observedPitchError = lerp(memoryBlend, observedPitchError, correctionTargetPitchError);
+            pendingCorrectionWindowTicks--;
         }
 
         if (aimBiasTicks <= 0) {
@@ -1441,9 +1566,14 @@ public class InputFaker {
 
         double observedErrorMagnitude = Math.hypot(observedYawError, observedPitchError);
         boolean slowSwitchActive = targetSwitchSlowTicks > 0;
-        if (!slowSwitchActive && observedErrorMagnitude > 7.5) {
-            catchupTicksRemaining = Math.max(catchupTicksRemaining, 3);
-            correctionTicksRemaining = Math.max(correctionTicksRemaining, 3);
+        if (!slowSwitchActive
+                && (observedErrorMagnitude > 7.5 || screenSpaceMovement > (closeForSwing ? 2.8 : 4.8))) {
+            int catchupTicks = sampleCatchupTicks(distance, Math.max(angularSpeed, screenSpaceMovement));
+            catchupTicksRemaining = Math.max(catchupTicksRemaining, catchupTicks);
+            correctionTicksRemaining = Math.max(
+                    correctionTicksRemaining,
+                    sampleCorrectionWindowTicks(distance, Math.max(angularSpeed, screenSpaceMovement))
+            );
         } else {
             catchupTicksRemaining = Math.max(0, catchupTicksRemaining - 1);
             correctionTicksRemaining = Math.max(0, correctionTicksRemaining - 1);
@@ -1463,7 +1593,7 @@ public class InputFaker {
         combatLookOffsetPitch = lerp(0.09, combatLookOffsetPitch, combatLookOffsetTargetPitch);
 
         double precision = closeForSwing ? Math.clamp((cooldown - 0.55) / 0.35, 0.0, 1.0) : 0.0;
-        double lookOffsetScale = closeForSwing ? (0.01 + ((1.0 - precision) * 0.22)) : 0.45;
+        double lookOffsetScale = closeForSwing ? (0.01 + ((1.0 - precision) * 0.22)) : 0.28;
         if (relativeHorizontalSpeed > 0.05) {
             lookOffsetScale *= 0.72;
         }
@@ -1479,10 +1609,11 @@ public class InputFaker {
         if (observedErrorMagnitude > 4.5) {
             liveTrackingWeight += 0.12;
         }
+        liveTrackingWeight -= Math.clamp((surpriseLevel * 0.14) + (aimBehindTicks > 0 ? 0.06 : 0.0), 0.0, 0.18);
         if (catchupActive) {
             liveTrackingWeight = Math.max(liveTrackingWeight, 0.84);
         }
-        liveTrackingWeight = Math.clamp(liveTrackingWeight, 0.20, 0.88);
+        liveTrackingWeight = Math.clamp(liveTrackingWeight, 0.36, 0.90);
 
         double trackedYawForAim = lerp(liveTrackingWeight, observedYawError, liveYawError);
         double trackedPitchForAim = lerp(liveTrackingWeight, observedPitchError, livePitchError);
@@ -1490,6 +1621,29 @@ public class InputFaker {
 
         double targetYawDelta = trackedYawForAim + (aimBiasYaw * biasScale) + (combatLookOffsetYaw * lookOffsetScale);
         double targetPitchDelta = trackedPitchForAim + (aimBiasPitch * biasScale) + (combatLookOffsetPitch * lookOffsetScale);
+
+        // Keep human noise realistic without allowing aim to drift categorically behind the target.
+        double yawDivergenceLimit = closeForSwing
+                ? 2.2
+                : (distance > attackRange + 3.0 ? 6.2 : 4.4);
+        double pitchDivergenceLimit = closeForSwing
+                ? 1.7
+                : (distance > attackRange + 3.0 ? 4.4 : 3.2);
+        targetYawDelta = liveYawError + Math.clamp(targetYawDelta - liveYawError, -yawDivergenceLimit, yawDivergenceLimit);
+        targetPitchDelta = livePitchError + Math.clamp(targetPitchDelta - livePitchError, -pitchDivergenceLimit, pitchDivergenceLimit);
+
+        if (liveYawError * targetYawDelta < 0.0 && Math.abs(liveYawError) < 26.0) {
+            targetYawDelta = liveYawError * randomRange(0.62, 0.94);
+        }
+        if (livePitchError * targetPitchDelta < 0.0 && Math.abs(livePitchError) < 22.0) {
+            targetPitchDelta = livePitchError * randomRange(0.60, 0.92);
+        }
+        if (Math.abs(liveYawError) <= 3.0) {
+            targetYawDelta = Math.clamp(targetYawDelta, liveYawError - 1.4, liveYawError + 1.4);
+        }
+        if (Math.abs(livePitchError) <= 2.6) {
+            targetPitchDelta = Math.clamp(targetPitchDelta, livePitchError - 1.1, livePitchError + 1.1);
+        }
 
         boolean upwardPopMotion = targetVelocity.y > 0.08;
         boolean closeHorizontalControlWindow = distance <= attackRange + 0.45 && Math.abs(liveYawError) < 10.5;
@@ -1582,6 +1736,46 @@ public class InputFaker {
             pitchStep += randomRange(-0.12, 0.12);
         }
 
+        // Human-like motor layer: velocity-limited corrections with small tremor/micro-saccade noise.
+        double reactionLagScale = Math.clamp(
+                (aimHumanReactionScale * (1.0 + (surpriseLevel * 0.22))) + (aimBehindTicks > 0 ? 0.06 : 0.0),
+                0.65,
+                1.95
+        );
+        double accelerationGain = Math.clamp((aimHumanCorrectionScale / reactionLagScale), 0.42, 1.55);
+        double yawAccelerationLimit = Math.max(0.06, yawStepLimit * 0.34 * accelerationGain * (catchupActive ? 1.20 : 1.0));
+        double pitchAccelerationLimit = Math.max(0.05, pitchStepLimit * 0.32 * accelerationGain * (catchupActive ? 1.14 : 1.0));
+
+        combatAimYawVelocity += Math.clamp(yawStep - combatAimYawVelocity, -yawAccelerationLimit, yawAccelerationLimit);
+        combatAimPitchVelocity += Math.clamp(pitchStep - combatAimPitchVelocity, -pitchAccelerationLimit, pitchAccelerationLimit);
+
+        double tremorBase = (0.018 + (Math.min(deltaMagnitude, 16.0) * 0.0034) + (surpriseLevel * 0.028)) * aimHumanJitterScale;
+        double tremorYaw = (random.nextGaussian() * tremorBase)
+                + (Math.sin((player.tickCount * 0.34) + 1.6) * tremorBase * 0.55);
+        double tremorPitch = (random.nextGaussian() * tremorBase * 0.78)
+                + (Math.cos((player.tickCount * 0.31) + 0.7) * tremorBase * 0.45);
+
+        yawStep = combatAimYawVelocity + tremorYaw;
+        pitchStep = combatAimPitchVelocity + tremorPitch;
+
+        double yawCap = yawStepLimit * (slowSwitchActive ? 1.35 : 1.18);
+        double pitchCap = pitchStepLimit * (slowSwitchActive ? 1.30 : 1.15);
+        yawStep = Math.clamp(yawStep, -yawCap, yawCap);
+        pitchStep = Math.clamp(pitchStep, -pitchCap, pitchCap);
+
+        double combatNoiseIntensity = (closeForSwing ? 0.54 : 0.82)
+                + (surpriseLevel * 0.32)
+                + Math.min(0.38, deltaMagnitude / 18.0);
+        MouseDelta noisyCombatInput = applyNaturalMouseNoise(
+                yawStep,
+                pitchStep,
+                yawCap,
+                pitchCap,
+                combatNoiseIntensity
+        );
+        yawStep = noisyCombatInput.yaw();
+        pitchStep = noisyCombatInput.pitch();
+
         player.turn(yawStep, pitchStep);
         player.setXRot((float) Math.clamp(player.getXRot(), MIN_TARGET_PITCH_DEGREES, MAX_TARGET_PITCH_DEGREES));
         animationFrame++;
@@ -1659,6 +1853,17 @@ public class InputFaker {
         double pitchStepLimit = randomRange(pitchStepMin, pitchStepMax) * speedEnvelope;
         double yawStep = Math.clamp(deltaYaw, -yawStepLimit, yawStepLimit);
         double pitchStep = Math.clamp(deltaPitch, -pitchStepLimit, pitchStepLimit);
+
+        double occludedNoiseIntensity = 0.34 + Math.min(0.40, Math.hypot(deltaYaw, deltaPitch) / 8.0);
+        MouseDelta noisyOccludedInput = applyNaturalMouseNoise(
+                yawStep,
+                pitchStep,
+                yawStepLimit,
+                pitchStepLimit,
+                occludedNoiseIntensity
+        );
+        yawStep = noisyOccludedInput.yaw();
+        pitchStep = noisyOccludedInput.pitch();
 
         player.turn(yawStep, pitchStep);
         player.setXRot((float) Math.clamp(player.getXRot(), MIN_TARGET_PITCH_DEGREES, MAX_TARGET_PITCH_DEGREES));
@@ -3079,6 +3284,7 @@ public class InputFaker {
             boolean skeletonTooCloseForBow = hasMeleeOption
                     && targetIsSkeleton
                     && distance <= BOW_SKELETON_MELEE_SWITCH_DISTANCE;
+            boolean bowSwitchRollPassed = currentlyUsingBowSlot || random.nextDouble() < 0.24;
             if (currentlyUsingBowSlot) {
                 double keepBowDistanceFloor = targetIsSkeleton && hasMeleeOption
                         ? (BOW_SKELETON_MELEE_SWITCH_DISTANCE - 0.95)
@@ -3094,28 +3300,33 @@ public class InputFaker {
                     ? Math.max(BOW_SKELETON_MELEE_SWITCH_DISTANCE, BOW_ENGAGE_HYSTERESIS_DISTANCE + 1.4)
                     : BOW_ENGAGE_HYSTERESIS_DISTANCE;
             boolean bowRangePreference = hasLineOfSight
-                    && (distance >= bowMinDistance
+                    && (distance >= bowMinDistance + (hasMeleeOption ? 1.2 : 0.0)
                     || (currentlyUsingBowSlot && distance >= bowHysteresisDistance));
             boolean looseBowPreference = !targetIsSkeleton
-                    && distance >= Math.max(3.8, BOW_ENGAGE_MIN_DISTANCE - 0.45);
+                    && hasLineOfSight
+                    && distance >= Math.max(7.0, BOW_ENGAGE_MIN_DISTANCE + 0.7);
             boolean rangedSkeletonPressure = targetIsSkeleton
                     && hasLineOfSight
-                    && distance >= Math.max(4.7, BOW_SKELETON_MELEE_SWITCH_DISTANCE - 0.7);
+                    && distance >= Math.max(7.2, BOW_SKELETON_MELEE_SWITCH_DISTANCE + 0.3);
             boolean keepBowMomentum = currentlyUsingBowSlot
                     && hasLineOfSight
                     && distance >= Math.max(3.3, BOW_ENGAGE_HYSTERESIS_DISTANCE);
             if (bowRangePreference) {
-                if (!skeletonTooCloseForBow) {
+                if (!skeletonTooCloseForBow && bowSwitchRollPassed) {
                     return new WeaponChoice(bowSlot, WeaponType.BOW);
                 }
             }
-            if (rangedSkeletonPressure && !hasDangerouslyCloseHostileThreat(player, target)) {
+            if (rangedSkeletonPressure
+                    && !hasDangerouslyCloseHostileThreat(player, target)
+                    && bowSwitchRollPassed) {
                 return new WeaponChoice(bowSlot, WeaponType.BOW);
             }
             if (keepBowMomentum && !skeletonTooCloseForBow) {
                 return new WeaponChoice(bowSlot, WeaponType.BOW);
             }
-            if (looseBowPreference && !hasDangerouslyCloseHostileThreat(player, target)) {
+            if (looseBowPreference
+                    && !hasDangerouslyCloseHostileThreat(player, target)
+                    && bowSwitchRollPassed) {
                 return new WeaponChoice(bowSlot, WeaponType.BOW);
             }
         }
@@ -3328,6 +3539,67 @@ public class InputFaker {
         return minTicks + random.nextInt((maxTicks - minTicks) + 1);
     }
 
+    private static int sampleReactionDelayTicks(double distance,
+                                                double surpriseLevel,
+                                                boolean closeForSwing,
+                                                double relativeHorizontalSpeed) {
+        double base = closeForSwing ? 1.9 : 2.7;
+        base += Math.clamp(distance / 10.0, 0.0, 0.9);
+        base += surpriseLevel * 2.2;
+        base -= Math.clamp(relativeHorizontalSpeed * 2.2, 0.0, 0.8);
+        base *= aimHumanReactionScale;
+        base += random.nextGaussian() * 0.65;
+
+        int sampledTicks = (int) Math.round(base);
+        if (closeForSwing) {
+            sampledTicks = Math.max(1, sampledTicks - 1);
+        }
+        return Math.max(1, Math.min(12, sampledTicks));
+    }
+
+    private static MouseDelta applyNaturalMouseNoise(double yawStep,
+                                                     double pitchStep,
+                                                     double yawLimit,
+                                                     double pitchLimit,
+                                                     double intensity) {
+        double clampedIntensity = Math.clamp(intensity, 0.12, 1.8);
+
+        double lowFreqSigma = (0.006 + (0.020 * clampedIntensity)) * aimHumanJitterScale;
+        naturalMouseNoiseYaw = lerp(0.18, naturalMouseNoiseYaw, random.nextGaussian() * lowFreqSigma);
+        naturalMouseNoisePitch = lerp(0.20, naturalMouseNoisePitch, random.nextGaussian() * lowFreqSigma * 0.80);
+
+        naturalMouseNoisePhase += 0.13 + randomRange(-0.03, 0.03) + (clampedIntensity * 0.015);
+        double waveMagnitude = (0.004 + (0.011 * clampedIntensity)) * aimHumanJitterScale;
+        double waveYaw = (Math.sin(naturalMouseNoisePhase) * waveMagnitude)
+                + (Math.sin((naturalMouseNoisePhase * 0.47) + 1.2) * waveMagnitude * 0.58);
+        double wavePitch = (Math.cos((naturalMouseNoisePhase * 0.93) + 0.5) * waveMagnitude * 0.74)
+                + (Math.sin((naturalMouseNoisePhase * 0.41) - 0.9) * waveMagnitude * 0.42);
+
+        if (naturalMouseBurstTicks <= 0 && random.nextDouble() < (0.006 + (0.018 * clampedIntensity))) {
+            naturalMouseBurstTicks = 2 + random.nextInt(4);
+            naturalMouseBurstYaw = randomRange(-1.0, 1.0) * (0.018 + (0.055 * clampedIntensity));
+            naturalMouseBurstPitch = randomRange(-1.0, 1.0) * (0.012 + (0.040 * clampedIntensity));
+        }
+        if (naturalMouseBurstTicks > 0) {
+            double burstDecay = naturalMouseBurstTicks / 6.0;
+            waveYaw += naturalMouseBurstYaw * burstDecay;
+            wavePitch += naturalMouseBurstPitch * burstDecay;
+            naturalMouseBurstTicks--;
+            if (naturalMouseBurstTicks <= 0) {
+                naturalMouseBurstYaw = 0.0;
+                naturalMouseBurstPitch = 0.0;
+            }
+        }
+
+        double noisyYaw = yawStep + naturalMouseNoiseYaw + waveYaw;
+        double noisyPitch = pitchStep + naturalMouseNoisePitch + wavePitch;
+        double yawCap = Math.max(0.08, Math.abs(yawLimit) * 1.12);
+        double pitchCap = Math.max(0.08, Math.abs(pitchLimit) * 1.12);
+        noisyYaw = Math.clamp(noisyYaw, -yawCap, yawCap);
+        noisyPitch = Math.clamp(noisyPitch, -pitchCap, pitchCap);
+        return new MouseDelta(noisyYaw, noisyPitch);
+    }
+
     private static void scheduleNextAttackCadence(WeaponType weaponType) {
         attackCadenceWeaponType = weaponType;
         hasAttackCadence = true;
@@ -3367,6 +3639,15 @@ public class InputFaker {
         hasTargetErrorHistory = false;
         combatAimYawVelocity = 0;
         combatAimPitchVelocity = 0;
+        naturalMouseNoiseYaw = 0;
+        naturalMouseNoisePitch = 0;
+        naturalMouseBurstTicks = 0;
+        naturalMouseBurstYaw = 0;
+        naturalMouseBurstPitch = 0;
+        aimHumanReactionScale = Math.clamp(1.0 + (random.nextGaussian() * 0.16), 0.72, 1.42);
+        aimHumanCorrectionScale = Math.clamp(1.0 + (random.nextGaussian() * 0.17), 0.68, 1.45);
+        aimHumanJitterScale = Math.clamp(1.0 + (random.nextGaussian() * 0.24), 0.55, 1.85);
+        aimHumanMicroSaccadeBias = randomRange(-0.22, 0.22);
         lastTargetAngularSpeed = 0;
         aimBiasTicks = 0;
         deliberateMissTicks = 0;
@@ -3486,6 +3767,143 @@ public class InputFaker {
             return WeaponType.BOW;
         }
         return WeaponType.NONE;
+    }
+
+    private static void startFoodConsumptionObjective(int hotbarSlot) {
+        if (hotbarSlot < 0 || hotbarSlot >= Inventory.getSelectionSize()) {
+            return;
+        }
+        foodConsumptionObjectiveActive = true;
+        foodConsumptionObjectiveSlot = hotbarSlot;
+        // Preempt any previous wandering slot pulse so food objective takes ownership.
+        pendingHotbarSlot = -1;
+        hotbarSwitchPulseCooldownTicks = 0;
+        hotbarSwitchPulseAttempts = 0;
+        queueHotbarSlot(hotbarSlot);
+    }
+
+    private static void abortFoodConsumptionObjective() {
+        foodConsumptionObjectiveActive = false;
+        foodConsumptionObjectiveSlot = -1;
+    }
+
+    private static boolean updateFoodConsumptionObjective(LocalPlayer player, boolean shouldAbort) {
+        if (!foodConsumptionObjectiveActive) {
+            return false;
+        }
+        if (player == null || shouldAbort || combatActive || !player.isAlive() || player.isSpectator()) {
+            abortFoodConsumptionObjective();
+            return false;
+        }
+        if (!player.getFoodData().needsFood()) {
+            abortFoodConsumptionObjective();
+            return false;
+        }
+
+        int objectiveSlot = resolveFoodConsumptionObjectiveSlot(player);
+        if (objectiveSlot < 0) {
+            abortFoodConsumptionObjective();
+            return false;
+        }
+        foodConsumptionObjectiveSlot = objectiveSlot;
+
+        if (player.getInventory().getSelectedSlot() != objectiveSlot) {
+            queueHotbarSlot(objectiveSlot);
+        }
+        return true;
+    }
+
+    private static int resolveFoodConsumptionObjectiveSlot(LocalPlayer player) {
+        if (isValidFoodObjectiveSlot(player, foodConsumptionObjectiveSlot)) {
+            return foodConsumptionObjectiveSlot;
+        }
+        return findBestHotbarFoodSlot(player);
+    }
+
+    private static boolean isValidFoodObjectiveSlot(LocalPlayer player, int hotbarSlot) {
+        if (player == null || hotbarSlot < 0 || hotbarSlot >= Inventory.getSelectionSize()) {
+            return false;
+        }
+        ItemStack stack = player.getInventory().getItem(hotbarSlot);
+        FoodProperties food = getFoodProperties(stack);
+        if (food == null) {
+            return false;
+        }
+        return player.canEat(food.canAlwaysEat());
+    }
+
+    private static int findBestHotbarFoodSlot(LocalPlayer player) {
+        if (player == null) {
+            return -1;
+        }
+        int missingFood = Math.max(0, MAX_FOOD_LEVEL - player.getFoodData().getFoodLevel());
+        if (missingFood <= 0) {
+            return -1;
+        }
+
+        Inventory inventory = player.getInventory();
+        int bestSlot = -1;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        int fallbackSlot = -1;
+        double fallbackScore = Double.NEGATIVE_INFINITY;
+        int hotbarSize = Inventory.getSelectionSize();
+        for (int slot = 0; slot < hotbarSize; slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            FoodProperties food = getFoodProperties(stack);
+            if (food == null) {
+                continue;
+            }
+
+            double score = scoreFoodForAutoEat(stack, food, missingFood);
+            if (isUnsuitableFoodForAutoEat(stack)) {
+                if (score > fallbackScore) {
+                    fallbackScore = score;
+                    fallbackSlot = slot;
+                }
+                continue;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestSlot = slot;
+            }
+        }
+
+        return bestSlot >= 0 ? bestSlot : fallbackSlot;
+    }
+
+    private static FoodProperties getFoodProperties(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return null;
+        }
+        return stack.get(DataComponents.FOOD);
+    }
+
+    private static double scoreFoodForAutoEat(ItemStack stack, FoodProperties food, int missingFood) {
+        int nutrition = Math.max(1, food.nutrition());
+        double waste = Math.max(0.0, nutrition - missingFood);
+        double score = 100.0;
+        score -= waste * 4.2;
+        score -= Math.abs(nutrition - missingFood) * 0.35;
+        score += food.saturation() * 0.25;
+        if (food.canAlwaysEat()) {
+            score -= 1.8;
+        }
+        if (isPremiumFood(stack)) {
+            score -= 8.0;
+        }
+        return score;
+    }
+
+    private static boolean isUnsuitableFoodForAutoEat(ItemStack stack) {
+        return stack.is(Items.ROTTEN_FLESH)
+                || stack.is(Items.SPIDER_EYE)
+                || stack.is(Items.POISONOUS_POTATO)
+                || stack.is(Items.PUFFERFISH)
+                || stack.is(Items.CHICKEN);
+    }
+
+    private static boolean isPremiumFood(ItemStack stack) {
+        return stack.is(Items.GOLDEN_APPLE) || stack.is(Items.ENCHANTED_GOLDEN_APPLE);
     }
 
     private static int resolveHotbarSlotKeyToPress(LocalPlayer player) {
