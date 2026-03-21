@@ -3,6 +3,7 @@ package me.michael.kei.actionrecorder;
 import com.mojang.blaze3d.platform.InputConstants;
 import me.michael.kei.actionrecorder.mixin.MouseHandlerMixin;
 import net.minecraft.client.Camera;
+import net.minecraft.client.CameraType;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
@@ -75,6 +76,10 @@ public class ActionRecorder {
      * That means e.g. breaking a block, or the instant of a hit, or the instant of an inventory click.
      */
     private static boolean lastLeftClickActive = false;
+
+    private static boolean isNormalPerspective = true;
+    private static boolean isFrontF5Perspective = false;
+    private static boolean isBackF5Perspective = false;
 
     // Per-frame typed characters when a Screen is open
     public static final List<String> pressedScreenKeys = new ArrayList<>();
@@ -287,6 +292,11 @@ public class ActionRecorder {
             resetRecording();
             return;
         }
+        CameraType cameraType = Minecraft.getInstance().options.getCameraType();
+
+        isNormalPerspective = cameraType == CameraType.FIRST_PERSON;
+        isBackF5Perspective = cameraType == CameraType.THIRD_PERSON_BACK;
+        isFrontF5Perspective = cameraType == CameraType.THIRD_PERSON_FRONT;
 
         trackLeftClick(minecraft.mouseHandler.isLeftPressed() || guiLeftMouseClicked, minecraft);
         trackRightClick(minecraft.mouseHandler.isRightPressed() || guiRightMouseClicked, minecraft);
@@ -535,6 +545,11 @@ public class ActionRecorder {
                     // mouse
                     lastLeftClickActive,
                     lastRightClickActive,
+
+                    // perspective
+                    isNormalPerspective,
+                    isFrontF5Perspective,
+                    isBackF5Perspective
             };
             try {
                 // pressedScreenKeys = List<Character>
