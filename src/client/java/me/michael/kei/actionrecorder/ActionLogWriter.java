@@ -12,8 +12,13 @@ public class ActionLogWriter {
 
     private final DataOutputStream dos;
 
-    public ActionLogWriter(Path logFile) throws FileNotFoundException {
+    private static final int MAGIC = 0xFAFA;
+    private static final int VERSION = 2;
+
+    public ActionLogWriter(Path logFile) throws IOException {
         this.dos = new DataOutputStream(new FileOutputStream(logFile.toFile()));
+        this.dos.writeInt(MAGIC);
+        this.dos.write(VERSION);
     }
 
     public void logStates(boolean[] states, float[] rotationDeltas, double[] cursorDeltas, List<String> pressedCharacters) throws IOException {
