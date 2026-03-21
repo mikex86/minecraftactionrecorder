@@ -237,7 +237,7 @@ public class ActionRecorder {
 
     private static final int TARGET_FRAME_RATE = 60;
 
-    private static int lastWidth =  0;
+    private static int lastWidth = 0;
     private static int lastHeight = 0;
 
     private static final Timer timer = new Timer(TARGET_FRAME_RATE);
@@ -314,9 +314,9 @@ public class ActionRecorder {
                 (InputConstants.isKeyDown(minecraft.getWindow().getWindow(), InputConstants.KEY_LSHIFT) && (minecraft.screen != null) && (lastLeftClickActive || lastRightClickActive))
         ); // this one has an effect on click in the inventory screen
 
-        trackSprint(minecraft.player.isSprinting()); // log actual sprinting state
         trackJump(minecraft.options.keyJump.isDown() && (minecraft.player.onGround() || minecraft.player.isInWater() || minecraft.player.getAbilities().flying)); // only log jump if on ground or in water or when flying, where jump will move up
         trackDropItem(minecraft.options.keyDrop.isDown());
+        trackSprint(minecraft.player.isSprinting() || (minecraft.options.keySprint.isDown() && dropItemPressed)); // log actual sprinting state
 
         trackHotbarIndex(player.getInventory().getSelectedSlot());
 
