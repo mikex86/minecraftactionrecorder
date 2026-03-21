@@ -2,8 +2,8 @@ package me.michael.kei.actionrecorder.mixin;
 
 import me.michael.kei.actionrecorder.ActionRecorder;
 import me.michael.kei.actionrecorder.TimeScaler;
-import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
+import net.minecraft.util.Util;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;

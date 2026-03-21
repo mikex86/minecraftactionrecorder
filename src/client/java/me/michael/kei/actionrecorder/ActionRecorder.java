@@ -311,14 +311,14 @@ public class ActionRecorder {
         trackMoveRight(minecraft.options.keyRight.isDown() && minecraft.screen == null);
         trackCrouch((minecraft.options.keyShift.isDown() && minecraft.screen == null)
                 ||
-                (InputConstants.isKeyDown(minecraft.getWindow().getWindow(), InputConstants.KEY_LSHIFT) && (minecraft.screen != null) && (lastLeftClickActive || lastRightClickActive))
+                (InputConstants.isKeyDown(minecraft.getWindow(), InputConstants.KEY_LSHIFT) && (minecraft.screen != null) && (lastLeftClickActive || lastRightClickActive))
         ); // this one has an effect on click in the inventory screen
 
         trackJump(minecraft.options.keyJump.isDown() && (minecraft.player.onGround() || minecraft.player.isInWater() || minecraft.player.getAbilities().flying)); // only log jump if on ground or in water or when flying, where jump will move up
         trackDropItem(minecraft.options.keyDrop.isDown());
         trackSprint(minecraft.player.isSprinting() || (minecraft.options.keySprint.isDown() && dropItemPressed)); // log actual sprinting state
 
-        trackHotbarIndex(player.getInventory().selected);
+        trackHotbarIndex(player.getInventory().getSelectedSlot());
 
         trackMoveToOffhand(minecraft.options.keySwapOffhand.isDown());
 
