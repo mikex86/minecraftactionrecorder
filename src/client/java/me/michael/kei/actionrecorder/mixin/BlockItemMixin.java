@@ -1,6 +1,7 @@
 package me.michael.kei.actionrecorder.mixin;
 
 import me.michael.kei.actionrecorder.ActionRecorder;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import org.spongepowered.asm.mixin.Mixin;
@@ -17,7 +18,7 @@ public abstract class BlockItemMixin {
     )
     private void beforePlace(
             BlockPlaceContext context,
-            CallbackInfoReturnable<Boolean> cir
+            CallbackInfoReturnable<InteractionResult> cir
     ) {
         ActionRecorder.blockWasPlaced = true;
     }

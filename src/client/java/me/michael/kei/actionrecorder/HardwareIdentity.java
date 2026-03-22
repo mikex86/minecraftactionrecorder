@@ -146,8 +146,6 @@ public final class HardwareIdentity {
             for (int i = 0; i < dimms.size(); i++) {
                 PhysicalMemory dimm = dimms.get(i);
                 putIfValue(material, "ram." + i + ".manufacturer", dimm.getManufacturer());
-                putIfValue(material, "ram." + i + ".part", dimm.getPartNumber());
-                putIfValue(material, "ram." + i + ".serial", dimm.getSerialNumber());
                 putIfValue(material, "ram." + i + ".type", dimm.getMemoryType());
                 putIfValue(material, "ram." + i + ".capacity", Long.toString(dimm.getCapacity()));
                 putIfValue(material, "ram." + i + ".clock", Long.toString(dimm.getClockSpeed()));

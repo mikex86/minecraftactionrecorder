@@ -1,6 +1,6 @@
 package me.michael.kei.actionrecorder;
 
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 import org.lwjgl.opengl.GL11C;
 import oshi.SystemInfo;
 import oshi.hardware.GraphicsCard;
@@ -171,7 +171,7 @@ public final class FfmpegRuntimeBootstrap {
     }
 
     private static Path ensureBundledWindowsFfmpeg(boolean requireNvenc) throws IOException, InterruptedException {
-        Path gameDir = FabricLoader.getInstance().getGameDir().toAbsolutePath().normalize();
+        Path gameDir = FMLPaths.GAMEDIR.get().toAbsolutePath().normalize();
         Path runtimeRoot = gameDir.resolve("mcactionrec");
         Path zipPath = runtimeRoot.resolve(WINDOWS_FFMPEG_ZIP_FILE);
         Path extractedRoot = runtimeRoot.resolve(WINDOWS_FFMPEG_EXTRACT_DIR);
