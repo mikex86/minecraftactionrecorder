@@ -346,8 +346,9 @@ public class ActionRecorder {
         }
         prevIsScreenOpen = minecraft.screen != null;
 
-        saveFrame();
-        saveActionState();
+        if (saveFrame()) {
+            saveActionState();
+        }
         Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
         pressedScreenKeys.clear();
     }
@@ -375,7 +376,7 @@ public class ActionRecorder {
         }
     }
 
-    private static synchronized void saveFrame() {
+    private static synchronized boolean saveFrame() {
         Minecraft mc = Minecraft.getInstance();
         int width = mc.getWindow().getWidth();
         int height = mc.getWindow().getHeight();
@@ -395,7 +396,7 @@ public class ActionRecorder {
                         System.err.println("[ActionRecorder] FFmpeg unavailable; recording disabled: "
                                 + FfmpegRuntimeBootstrap.getStartupError());
                     }
-                    return;
+                    return false;
                 }
                 String ffmpegExecutable = FfmpegRuntimeBootstrap.getFfmpegExecutable();
                 videoWriter = new FfmpegPipeWriter(
@@ -422,11 +423,14 @@ public class ActionRecorder {
                 throw new RuntimeException(e);
             }
         }
-        FrameCapture.grabMainFramebufferRGB(frameBuffer);
-        renderCursor(mc.screen != null, frameBuffer);
-        if (videoWriter != null) {
-            videoWriter.pushFrame(frameBuffer);
+        if (FrameCapture.grabMainFramebufferRGBAsync(frameBuffer)) {
+            renderCursor(mc.screen != null, frameBuffer);
+            if (videoWriter != null) {
+                videoWriter.pushFrame(frameBuffer);
+            }
+            return true;
         }
+        return false;
     }
 
     private static final String cursorResourcePath = "/assets/minecraftactionrecorder/cursor.png";
