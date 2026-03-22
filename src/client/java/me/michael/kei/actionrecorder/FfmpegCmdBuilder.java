@@ -73,10 +73,8 @@ public class FfmpegCmdBuilder {
             }
         }
 
-        // Common muxer nicety for MP4/MOV: enables progressive playback
-        if (isLikelyMp4(outputFile)) {
-            cmd.addAll(Arrays.asList("-movflags", "+faststart"));
-        }
+        // Do not use +faststart here: it rewrites MP4 layout on finalize and invalidates
+        // already-uploaded chunk hashes during incremental background upload.
 
         // Output
         cmd.addAll(Arrays.asList(
@@ -99,8 +97,8 @@ public class FfmpegCmdBuilder {
                 "-rc", "vbr",
                 "-cq", "28",
                 "-b:v", "3500k",
-                "-maxrate", "5000k",
-                "-bufsize", "10000k",
+                "-maxrate", "10000k",
+                "-bufsize", "20000k",
                 "-rc-lookahead", "32",
                 "-spatial_aq", "1",
                 "-temporal_aq", "1",
@@ -186,8 +184,4 @@ public class FfmpegCmdBuilder {
         ));
     }
 
-    private static boolean isLikelyMp4(Path outputFile) {
-        String name = outputFile.getFileName().toString().toLowerCase();
-        return name.endsWith(".mp4") || name.endsWith(".mov") || name.endsWith(".m4v");
-    }
 }
