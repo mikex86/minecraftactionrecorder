@@ -39,7 +39,7 @@ public class ActionRecorder {
     public static boolean guiLeftMouseClicked = false;
     public static boolean guiRightMouseClicked = false;
 
-    public static boolean blockWasPlaced = false;
+    public static boolean blockInteracted = false;
     public static boolean attackPerformed = false;
 
     private static boolean dropItemPressed = false;
@@ -60,7 +60,8 @@ public class ActionRecorder {
     /**
      * Last right click active has a very specific meaning.
      * Active means that the click is in fact currently performing some action within the game.
-     * That means e.g. blocking with a shield, or drawing a bow, or the instant of a block place, or an inventory right click.
+     * That means e.g. blocking with a shield, or drawing a bow, or the instant of a block interaction (including block place),
+     * or an inventory right click.
      */
     private static boolean lastRightClickActive = false;
 
@@ -232,7 +233,7 @@ public class ActionRecorder {
         Player player = minecraft.player;
         boolean anyHeldItemInUse = player != null && player.isUsingItem();
         boolean anyScreen = minecraft.screen != null;
-        lastRightClickActive = blockWasPlaced || (lastRightClickPressed && anyScreen) || anyHeldItemInUse;
+        lastRightClickActive = blockInteracted || (lastRightClickPressed && anyScreen) || anyHeldItemInUse;
     }
 
     private static final int TARGET_FRAME_RATE = 60;
@@ -298,7 +299,7 @@ public class ActionRecorder {
         guiLeftMouseClicked = false;
         guiRightMouseClicked = false;
 
-        blockWasPlaced = false;
+        blockInteracted = false;
         attackPerformed = false;
 
         trackYaw(player.getYRot());
