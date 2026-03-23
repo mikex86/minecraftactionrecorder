@@ -73,11 +73,6 @@ public class FfmpegCmdBuilder {
             }
         }
 
-        // Common muxer nicety for MP4/MOV: enables progressive playback
-        if (isLikelyMp4(outputFile)) {
-            cmd.addAll(Arrays.asList("-movflags", "+faststart"));
-        }
-
         // Output
         cmd.addAll(Arrays.asList(
                 outputFile.toAbsolutePath().toString()
@@ -88,12 +83,11 @@ public class FfmpegCmdBuilder {
     private static void addNvenc(List<String> cmd, String cpuFilterChain, int fps) {
         // NVIDIA NVENC HEVC tuned for high compression with acceptable quality.
         // Targets a much lower sustained bitrate than the prior H.264 settings.
-        int gop = Math.max(fps * 4, 60); // ~4 second keyframe interval for better compression
         cmd.addAll(Arrays.asList(
                 "-an",
                 "-vf", cpuFilterChain,
                 "-c:v", "hevc_nvenc",
-                "-preset", "p6",          // p1 (fast) ... p7 (slow/best)
+                "-preset", "p1",          // p1 (fast) ... p7 (slow/best)
                 "-tune", "hq",
                 "-profile:v", "main",
                 "-rc", "vbr",
@@ -106,7 +100,6 @@ public class FfmpegCmdBuilder {
                 "-temporal_aq", "1",
                 "-aq-strength", "10",
                 "-bf", "3",
-                "-g", String.valueOf(gop),
                 "-pix_fmt", "yuv420p"     // broad decode compatibility
         ));
     }
