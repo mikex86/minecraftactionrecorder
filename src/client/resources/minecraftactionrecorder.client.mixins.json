@@ -6,7 +6,7 @@
     "MinecraftMixin",
     "KeyboardHandlerMixin",
     "MouseHandlerMixin",
-    "BlockItemMixin"
+    "MultiPlayerGameModeMixin"
   ],
   "injectors": {
     "defaultRequire": 1
