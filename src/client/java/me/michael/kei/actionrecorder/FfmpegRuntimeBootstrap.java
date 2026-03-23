@@ -51,12 +51,6 @@ public final class FfmpegRuntimeBootstrap {
         boolean nvidiaHost = hostHasNvidiaGpu();
         System.out.println("[FFmpegSetup] Startup check: os=" + os + ", nvidiaHost=" + nvidiaHost);
 
-        ProbeResult pathProbe = probeFfmpeg("ffmpeg", nvidiaHost);
-        if (pathProbe.success) {
-            System.out.println("[FFmpegSetup] Using ffmpeg from PATH");
-            return;
-        }
-
         if (os == FfmpegCmdBuilder.Os.WINDOWS) {
             try {
                 Path bundled = ensureBundledWindowsFfmpeg(nvidiaHost);
@@ -72,6 +66,12 @@ public final class FfmpegRuntimeBootstrap {
                 startupError = "Failed to install bundled FFmpeg: " + e.getMessage();
                 System.err.println("[FFmpegSetup] " + startupError);
             }
+            return;
+        }
+
+        ProbeResult pathProbe = probeFfmpeg("ffmpeg", nvidiaHost);
+        if (pathProbe.success) {
+            System.out.println("[FFmpegSetup] Using ffmpeg from PATH");
             return;
         }
 
