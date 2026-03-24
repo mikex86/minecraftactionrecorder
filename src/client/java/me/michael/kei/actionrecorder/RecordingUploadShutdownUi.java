@@ -67,7 +67,7 @@ final class RecordingUploadShutdownUi {
         });
     }
 
-    void showProgress(int completionPercent, long totalChunks, long pendingChunks, int failedFiles, String lastError) {
+    void showProgress(int completionPercent, long totalChunks, long pendingChunks, int finalizingFiles, int failedFiles, String phase, String lastError) {
         SwingUtilities.invokeLater(() -> {
             if (progressBar == null || label == null) {
                 return;
@@ -77,6 +77,9 @@ final class RecordingUploadShutdownUi {
             progressBar.setValue(pct);
             progressBar.setString(pct + "%");
             StringBuilder text = new StringBuilder();
+            if (phase != null && !phase.isBlank()) {
+                text.append(phase).append(" | ");
+            }
             text.append("Uploaded ")
                     .append(Math.max(0L, totalChunks - pendingChunks))
                     .append(" / ")
@@ -84,6 +87,9 @@ final class RecordingUploadShutdownUi {
                     .append(" chunks (pending ")
                     .append(pendingChunks)
                     .append(")");
+            if (finalizingFiles > 0) {
+                text.append(" | finalizing files: ").append(finalizingFiles);
+            }
             if (failedFiles > 0) {
                 text.append(" | failed files: ").append(failedFiles);
             }
