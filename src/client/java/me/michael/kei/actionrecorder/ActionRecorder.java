@@ -200,6 +200,34 @@ public class ActionRecorder {
         openChatDown = openChatState;
     }
 
+    private static double toLoggedCursorX(Minecraft minecraft, double rawMouseX) {
+        int windowWidth = minecraft.getWindow().getWidth();
+        int pixelWidth = minecraft.getWindow().getScreenWidth();
+        if (windowWidth <= 0 || pixelWidth <= 0) {
+            return rawMouseX;
+        }
+
+        double scaleX = (double) pixelWidth / (double) windowWidth;
+        if (Math.abs(scaleX - 1.0d) < 1.0e-9) {
+            return rawMouseX;
+        }
+        return rawMouseX * scaleX;
+    }
+
+    private static double toLoggedCursorY(Minecraft minecraft, double rawMouseY) {
+        int windowHeight = minecraft.getWindow().getHeight();
+        int pixelHeight = minecraft.getWindow().getScreenHeight();
+        if (windowHeight <= 0 || pixelHeight <= 0) {
+            return rawMouseY;
+        }
+
+        double scaleY = (double) pixelHeight / (double) windowHeight;
+        if (Math.abs(scaleY - 1.0d) < 1.0e-9) {
+            return rawMouseY;
+        }
+        return rawMouseY * scaleY;
+    }
+
     private static void trackCursorMoveX(double cursorX) {
         if (lastCursorX == cursorX) {
             return;
@@ -338,8 +366,8 @@ public class ActionRecorder {
             }
             double mouseX = minecraft.mouseHandler.xpos();
             double mouseY = minecraft.mouseHandler.ypos();
-            trackCursorMoveX(mouseX);
-            trackCursorMoveY(mouseY);
+            trackCursorMoveX(toLoggedCursorX(minecraft, mouseX));
+            trackCursorMoveY(toLoggedCursorY(minecraft, mouseY));
         } else {
             cursorXDelta = 0;
             cursorYDelta = 0;
