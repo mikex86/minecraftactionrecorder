@@ -86,11 +86,6 @@ public class FfmpegCmdBuilder {
             }
         }
 
-        // Common muxer nicety for MP4/MOV: enables progressive playback
-        if (isLikelyMp4(outputFile)) {
-            cmd.addAll(Arrays.asList("-movflags", "+faststart"));
-        }
-
         // Output
         cmd.addAll(Arrays.asList(
                 outputFile.toAbsolutePath().toString()
