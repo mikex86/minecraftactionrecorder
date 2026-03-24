@@ -444,23 +444,11 @@ public class ActionRecorder {
         if (!show) {
             return;
         }
-        Minecraft mc = Minecraft.getInstance();
         int windowWidth = frameBufferWidth;
         int windowHeight = frameBufferHeight;
 
-        int guiWidth = mc.getWindow().getGuiScaledWidth();
-        int guiHeight = mc.getWindow().getGuiScaledHeight();
-
-        // MouseHandler reports GUI-scaled coordinates; captured frames are framebuffer pixels.
-        double mouseXInFramebuffer = lastCursorX;
-        double mouseYInFramebuffer = lastCursorY;
-        if (guiWidth > 0 && guiHeight > 0) {
-            mouseXInFramebuffer = lastCursorX * ((double) windowWidth / (double) guiWidth);
-            mouseYInFramebuffer = lastCursorY * ((double) windowHeight / (double) guiHeight);
-        }
-
-        int mouseX = (int) mouseXInFramebuffer;
-        int mouseY = (int) (windowHeight - mouseYInFramebuffer - cursorHeight);
+        int mouseX = (int) lastCursorX;
+        int mouseY = (int) (windowHeight - lastCursorY - cursorHeight);
 
         int startX = Math.max(0, mouseX);
         int startY = Math.max(0, mouseY);
