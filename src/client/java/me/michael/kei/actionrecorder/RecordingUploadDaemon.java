@@ -33,7 +33,11 @@ public final class RecordingUploadDaemon {
     public static final String UPLOAD_SERVER_BASE_URL = "http://localhost:8081";
     private static final int CHUNK_SIZE_BYTES = 1_048_576;
     private static final int REQUEST_TIMEOUT_SECONDS = 8;
+    private static final int BACKGROUND_LOOP_DELAY_MS = 2000;
+    private static final int SHUTDOWN_POLL_INTERVAL_MS = 200;
+    private static final int SHUTDOWN_STABLE_NO_WORK_PASSES = 3;
     private static final Path CAPTURES_DIR = Path.of("captures");
+    private static final ProgressListener NO_OP_PROGRESS_LISTENER = progress -> { };
 
     private final Gson gson = new Gson();
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -42,9 +46,11 @@ public final class RecordingUploadDaemon {
     private final Set<Path> activeFiles = ConcurrentHashMap.newKeySet();
     private final String clientId = HardwareIdentity.computeHardwareDerivedId();
 
+    private final Object lifecycleLock = new Object();
+    private final Object uploadPassLock = new Object();
+
     private volatile boolean running;
     private volatile boolean terminateRequested;
-    private volatile UploadSummary lastSummary = new UploadSummary();
     private volatile boolean startupSyncLogged;
     private volatile RecordingUploadShutdownUi preparedShutdownUi;
     private Thread workerThread;
@@ -52,18 +58,20 @@ public final class RecordingUploadDaemon {
     private RecordingUploadDaemon() {
     }
 
-    public synchronized void start() {
-        if (running) {
-            return;
-        }
-        running = true;
-        terminateRequested = false;
-        startupSyncLogged = false;
+    public void start() {
+        synchronized (lifecycleLock) {
+            if (running) {
+                return;
+            }
+            running = true;
+            terminateRequested = false;
+            startupSyncLogged = false;
 
-        Thread thread = new Thread(this::backgroundLoop, "recording-upload-daemon");
-        thread.setDaemon(true);
-        thread.start();
-        workerThread = thread;
+            Thread thread = new Thread(this::backgroundLoop, "recording-upload-daemon");
+            thread.setDaemon(true);
+            thread.start();
+            workerThread = thread;
+        }
 
         preInitializeShutdownUi();
     }
@@ -84,35 +92,39 @@ public final class RecordingUploadDaemon {
 
     public void shutdownAndDrainWithUi() {
         System.out.println("[UploadDaemon] shutdownAndDrainWithUi entered");
-        stopBackgroundThreadNonBlocking();
-        System.out.println("[UploadDaemon] shutdownAndDrainWithUi continuing after background stop request");
+        stopBackgroundThreadAndJoin();
         terminateRequested = false;
-        System.out.println("[UploadDaemon] Exiting game; starting upload completion flow...");
-        System.out.println("[UploadDaemon] UI env property java.awt.headless=" + System.getProperty("java.awt.headless"));
-        RecordingUploadShutdownUi window = preparedShutdownUi;
-        if (window == null) {
-            window = new RecordingUploadShutdownUi(this::requestTerminate, false);
+
+        RecordingUploadShutdownUi existingWindow = preparedShutdownUi;
+        if (existingWindow == null) {
+            existingWindow = new RecordingUploadShutdownUi(this::requestTerminate, false);
         }
+        final RecordingUploadShutdownUi window = existingWindow;
+
         window.showWindow();
-        UploadSummary snapshot = lastSummary;
-        if (snapshot != null && snapshot.hasDisplayableProgress()) {
-            pushSummaryToUi(window, snapshot);
-            System.out.println("[UploadDaemon] Reusing latest upload progress in shutdown window");
-        } else {
-            window.showStartingState();
-        }
+        window.showStartingState();
         System.out.println("[UploadDaemon] Upload progress window started");
 
         try {
+            int stableNoWorkPasses = 0;
             while (!terminateRequested) {
-                UploadSummary summary = uploadPass(false);
-                pushSummaryToUi(window, summary);
-                logShutdownPass(summary);
-                if (!summary.hasPendingChunks()) {
-                    System.out.println("[UploadDaemon] Exiting game; All upload tasks have finished, shutdown complete");
-                    break;
+                UploadProgress progress = runUploadCycle(false, snapshot -> pushProgressToUi(window, snapshot));
+
+                logShutdownPass(progress);
+
+                if (progress.hasRemainingWork()) {
+                    stableNoWorkPasses = 0;
+                } else {
+                    stableNoWorkPasses++;
+                    if (stableNoWorkPasses >= SHUTDOWN_STABLE_NO_WORK_PASSES) {
+                        System.out.println("[UploadDaemon] Exiting game; All upload tasks have finished, shutdown complete");
+                        break;
+                    }
+                    System.out.println("[UploadDaemon] shutdown pass reports no remaining work; verifying stability ("
+                            + stableNoWorkPasses + "/" + SHUTDOWN_STABLE_NO_WORK_PASSES + ")");
                 }
-                sleepQuietly(1000L);
+
+                sleepQuietly(SHUTDOWN_POLL_INTERVAL_MS);
             }
         } finally {
             window.dispose();
@@ -131,17 +143,41 @@ public final class RecordingUploadDaemon {
         warmupThread.start();
     }
 
-    private synchronized void stopBackgroundThreadNonBlocking() {
-        running = false;
-        Thread thread = workerThread;
+    private void stopBackgroundThreadAndJoin() {
+        Thread thread;
+        synchronized (lifecycleLock) {
+            running = false;
+            thread = workerThread;
+            if (thread != null && thread != Thread.currentThread()) {
+                thread.interrupt();
+            }
+        }
+
         if (thread == null) {
             return;
         }
+
+        System.out.println("[UploadDaemon] Background upload thread stop signaled; waiting for it to finish");
         if (thread != Thread.currentThread()) {
-            thread.interrupt();
+            boolean interrupted = false;
+            while (thread.isAlive()) {
+                try {
+                    thread.join(1000L);
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
-        workerThread = null;
-        System.out.println("[UploadDaemon] Background upload thread stop signaled (non-blocking)");
+
+        synchronized (lifecycleLock) {
+            if (workerThread == thread) {
+                workerThread = null;
+            }
+        }
+        System.out.println("[UploadDaemon] Background upload thread stopped");
     }
 
     private void requestTerminate() {
@@ -151,12 +187,13 @@ public final class RecordingUploadDaemon {
     private void backgroundLoop() {
         while (running) {
             try {
-                lastSummary = uploadPass(true);
+                UploadProgress progress = runUploadCycle(true, NO_OP_PROGRESS_LISTENER);
+
                 if (!startupSyncLogged) {
                     startupSyncLogged = true;
-                    if (lastSummary.initialPendingChunks > 0L) {
-                        System.out.println("[UploadDaemon] Retrieved pending upload task list from server; Resuming "
-                                + lastSummary.initialPendingChunks + " upload tasks...");
+                    if (progress.pendingChunks > 0L || progress.finalizingFiles > 0 || progress.failedFiles > 0) {
+                        System.out.println("[UploadDaemon] Retrieved pending upload task list from server; Resuming uploads (pendingChunks="
+                                + progress.pendingChunks + ", finalizingFiles=" + progress.finalizingFiles + ")");
                     } else {
                         System.out.println("[UploadDaemon] Retrieved pending upload task list from server; No pending file part uploads required");
                     }
@@ -164,99 +201,172 @@ public final class RecordingUploadDaemon {
             } catch (Exception e) {
                 System.err.println("[UploadDaemon] upload pass failed: " + throwableSummary(e));
             }
-            sleepQuietly(2000L);
+
+            if (!running) {
+                break;
+            }
+            sleepQuietly(BACKGROUND_LOOP_DELAY_MS);
         }
     }
 
-    private UploadSummary uploadPass(boolean includeActiveFiles) {
-        UploadSummary summary = new UploadSummary();
-        if (!Files.isDirectory(CAPTURES_DIR)) {
-            return summary;
-        }
+    private UploadProgress runUploadCycle(boolean includeActiveFiles, ProgressListener listener) {
+        synchronized (uploadPassLock) {
+            MutableProgress progress = new MutableProgress();
+            progress.phase = "Scanning captures...";
+            emitProgress(progress, listener);
 
-        List<Path> files = new ArrayList<>();
-        try (var stream = Files.walk(CAPTURES_DIR)) {
-            stream.filter(Files::isRegularFile)
-                    .sorted(Comparator.comparing(Path::toString))
-                    .forEach(files::add);
-        } catch (IOException e) {
-            String error = throwableSummary(e);
-            System.err.println("[UploadDaemon] failed to scan captures: " + error);
-            summary.lastError = error;
-            return summary;
-        }
-
-        for (Path file : files) {
-            if (terminateRequested) {
-                break;
+            if (!Files.isDirectory(CAPTURES_DIR)) {
+                progress.phase = "No capture directory found";
+                emitProgress(progress, listener);
+                return progress.snapshot();
             }
-            try {
-                syncAndUploadFile(file, includeActiveFiles, summary);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                summary.lastError = "Interrupted during upload pass";
-                System.out.println("[UploadDaemon] upload pass interrupted; stopping current pass");
-                break;
-            } catch (Exception e) {
-                summary.failedFiles++;
-                String error = throwableSummary(e);
-                summary.lastError = error;
-                try {
-                    long size = Files.size(file);
-                    int estimatedChunks = chunkCountForSize(size);
-                    summary.totalChunks += estimatedChunks;
-                    summary.pendingChunks += estimatedChunks;
-                } catch (IOException ignored) {
+
+            List<Path> files = new ArrayList<>();
+            try (var stream = Files.walk(CAPTURES_DIR)) {
+                stream.filter(Files::isRegularFile)
+                        .sorted(Comparator.comparing(Path::toString))
+                        .forEach(files::add);
+            } catch (IOException e) {
+                progress.lastError = throwableSummary(e);
+                progress.failedFiles++;
+                progress.phase = "Failed to scan captures";
+                emitProgress(progress, listener);
+                return progress.snapshot();
+            }
+
+            for (Path file : files) {
+                if (terminateRequested) {
+                    progress.phase = "Upload termination requested";
+                    emitProgress(progress, listener);
+                    break;
                 }
-                System.err.println("[UploadDaemon] failed for " + file + ": " + error);
+                processFile(file, includeActiveFiles, progress, listener);
             }
-        }
 
-        lastSummary = summary;
-        return summary;
+            if (progress.hasRemainingWork()) {
+                progress.phase = "Waiting for remaining upload work...";
+            } else {
+                progress.phase = "Uploads are up to date";
+            }
+            emitProgress(progress, listener);
+            return progress.snapshot();
+        }
     }
 
-    private void syncAndUploadFile(Path file, boolean includeActiveFiles, UploadSummary summary) throws Exception {
+    private void processFile(Path file, boolean includeActiveFiles, MutableProgress progress, ProgressListener listener) {
         Path normalized = normalize(file);
+
+        long size;
+        try {
+            size = Files.size(normalized);
+        } catch (IOException e) {
+            progress.failedFiles++;
+            progress.lastError = throwableSummary(e);
+            progress.phase = "Failed to read file size";
+            emitProgress(progress, listener);
+            return;
+        }
+
+        if (size <= 0L) {
+            return;
+        }
+
         boolean active = includeActiveFiles && activeFiles.contains(normalized);
-
-        long size = Files.size(normalized);
-        if (size <= 0) {
+        int chunkCount = active ? (int) (size / CHUNK_SIZE_BYTES) : chunkCountForSize(size);
+        if (chunkCount <= 0) {
             return;
         }
 
-        int knownChunkCount = active ? (int) (size / CHUNK_SIZE_BYTES) : chunkCountForSize(size);
-        if (knownChunkCount <= 0) {
-            return;
-        }
-
-        List<String> chunkHashes = computeChunkHashes(normalized, knownChunkCount, size);
-        if (chunkHashes.size() != knownChunkCount) {
-            return;
-        }
-
-        boolean complete = !active;
-        String fullHash = complete ? sha256Hex(normalized) : null;
         String relativeName = toRelativeCaptureName(normalized);
+        boolean complete = !active;
 
-        SyncResponse firstSync = sync(relativeName, size, complete, fullHash, chunkHashes);
-        summary.initialPendingChunks += firstSync.missingChunks.size();
-        for (Integer chunkIndex : firstSync.missingChunks) {
-            if (chunkIndex == null || chunkIndex < 0 || chunkIndex >= knownChunkCount) {
-                continue;
-            }
-            byte[] chunk = readChunk(normalized, chunkIndex, size);
-            if (chunk.length == 0) {
-                continue;
-            }
-            uploadChunk(relativeName, chunkIndex, chunk);
-        }
+        progress.totalFiles++;
+        progress.currentFile = relativeName;
+        progress.phase = "Syncing " + relativeName;
 
-        SyncResponse secondSync = sync(relativeName, size, complete, fullHash, chunkHashes);
-        summary.totalChunks += knownChunkCount;
-        summary.pendingChunks += secondSync.missingChunks.size();
-        if (secondSync.completeOnServer) {
-            summary.completedFiles++;
+        try {
+            List<String> chunkHashes = computeChunkHashes(normalized, chunkCount, size);
+            if (chunkHashes.size() != chunkCount) {
+                progress.failedFiles++;
+                progress.lastError = "Chunk hash count mismatch for " + relativeName;
+                progress.phase = "Failed hashing " + relativeName;
+                emitProgress(progress, listener);
+                return;
+            }
+
+            String fullHash = complete ? sha256Hex(normalized) : null;
+            SyncResponse firstSync = sync(relativeName, size, complete, fullHash, chunkHashes);
+
+            long firstPending = firstSync.missingChunks.size();
+            long fileUploaded = Math.max(0L, chunkCount - firstPending);
+            long filePending = firstPending;
+
+            progress.totalChunks += chunkCount;
+            progress.uploadedChunks += fileUploaded;
+            progress.pendingChunks += filePending;
+            emitProgress(progress, listener);
+
+            if (!firstSync.missingChunks.isEmpty()) {
+                progress.phase = "Uploading " + relativeName;
+                emitProgress(progress, listener);
+
+                for (Integer chunkIndex : firstSync.missingChunks) {
+                    if (terminateRequested) {
+                        progress.phase = "Upload termination requested";
+                        emitProgress(progress, listener);
+                        return;
+                    }
+                    if (chunkIndex == null || chunkIndex < 0 || chunkIndex >= chunkCount) {
+                        continue;
+                    }
+
+                    byte[] chunk = readChunk(normalized, chunkIndex, size);
+                    if (chunk.length == 0) {
+                        continue;
+                    }
+
+                    uploadChunk(relativeName, chunkIndex, chunk);
+                    fileUploaded++;
+                    filePending = Math.max(0L, filePending - 1L);
+                    progress.uploadedChunks++;
+                    progress.pendingChunks = Math.max(0L, progress.pendingChunks - 1L);
+                    emitProgress(progress, listener);
+                }
+            }
+
+            SyncResponse secondSync = sync(relativeName, size, complete, fullHash, chunkHashes);
+            long secondPending = secondSync.missingChunks.size();
+            long secondUploaded = Math.max(0L, chunkCount - secondPending);
+
+            progress.uploadedChunks += (secondUploaded - fileUploaded);
+            progress.pendingChunks += (secondPending - filePending);
+            if (progress.uploadedChunks < 0L) {
+                progress.uploadedChunks = 0L;
+            }
+            if (progress.pendingChunks < 0L) {
+                progress.pendingChunks = 0L;
+            }
+
+            if (secondSync.completeOnServer) {
+                progress.completedFiles++;
+                progress.phase = "Completed " + relativeName;
+            } else {
+                progress.finalizingFiles++;
+                progress.phase = "Finalizing " + relativeName;
+            }
+            emitProgress(progress, listener);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            progress.failedFiles++;
+            progress.lastError = "Interrupted during upload";
+            progress.phase = "Interrupted while uploading " + relativeName;
+            emitProgress(progress, listener);
+        } catch (Exception e) {
+            progress.failedFiles++;
+            progress.lastError = throwableSummary(e);
+            progress.phase = "Error uploading " + relativeName;
+            emitProgress(progress, listener);
+            System.err.println("[UploadDaemon] failed for " + normalized + ": " + throwableSummary(e));
         }
     }
 
@@ -314,6 +424,33 @@ public final class RecordingUploadDaemon {
         }
     }
 
+    private static void pushProgressToUi(RecordingUploadShutdownUi ui, UploadProgress progress) {
+        ui.showProgress(
+                progress.completionPercent(),
+                progress.totalChunks,
+                progress.pendingChunks,
+                progress.finalizingFiles,
+                progress.failedFiles,
+                progress.phase,
+                progress.lastError
+        );
+    }
+
+    private static void logShutdownPass(UploadProgress progress) {
+        String error = (progress.lastError == null || progress.lastError.isBlank())
+                ? ""
+                : ", lastError=" + progress.lastError;
+        System.out.println("[UploadDaemon] shutdown pass: pendingChunks=" + progress.pendingChunks
+                + ", totalChunks=" + progress.totalChunks
+                + ", finalizingFiles=" + progress.finalizingFiles
+                + ", failedFiles=" + progress.failedFiles
+                + error);
+    }
+
+    private static void emitProgress(MutableProgress progress, ProgressListener listener) {
+        listener.onProgress(progress.snapshot());
+    }
+
     private static Path normalize(Path path) {
         return path.toAbsolutePath().normalize();
     }
@@ -325,7 +462,7 @@ public final class RecordingUploadDaemon {
     }
 
     private static int chunkCountForSize(long fileSize) {
-        if (fileSize <= 0) {
+        if (fileSize <= 0L) {
             return 0;
         }
         return (int) ((fileSize + CHUNK_SIZE_BYTES - 1L) / CHUNK_SIZE_BYTES);
@@ -410,26 +547,6 @@ public final class RecordingUploadDaemon {
         }
     }
 
-    private static void logShutdownPass(UploadSummary summary) {
-        String extra = (summary.lastError == null || summary.lastError.isBlank())
-                ? ""
-                : ", lastError=" + summary.lastError;
-        System.out.println("[UploadDaemon] shutdown pass: pendingChunks=" + summary.pendingChunks
-                + ", totalChunks=" + summary.totalChunks
-                + ", failedFiles=" + summary.failedFiles
-                + extra);
-    }
-
-    private static void pushSummaryToUi(RecordingUploadShutdownUi ui, UploadSummary summary) {
-        ui.showProgress(
-                summary.completionPercent(),
-                summary.totalChunks,
-                summary.pendingChunks,
-                summary.failedFiles,
-                summary.lastError
-        );
-    }
-
     private static String throwableSummary(Throwable t) {
         if (t == null) {
             return "unknown error";
@@ -454,6 +571,97 @@ public final class RecordingUploadDaemon {
         return sb.toString();
     }
 
+    private interface ProgressListener {
+        void onProgress(UploadProgress progress);
+    }
+
+    private static final class MutableProgress {
+        long totalChunks;
+        long uploadedChunks;
+        long pendingChunks;
+        int totalFiles;
+        int completedFiles;
+        int finalizingFiles;
+        int failedFiles;
+        String phase;
+        String currentFile;
+        String lastError;
+
+        boolean hasRemainingWork() {
+            return pendingChunks > 0 || finalizingFiles > 0 || failedFiles > 0;
+        }
+
+        UploadProgress snapshot() {
+            return new UploadProgress(
+                    totalChunks,
+                    uploadedChunks,
+                    pendingChunks,
+                    totalFiles,
+                    completedFiles,
+                    finalizingFiles,
+                    failedFiles,
+                    phase,
+                    currentFile,
+                    lastError
+            );
+        }
+    }
+
+    static final class UploadProgress {
+        final long totalChunks;
+        final long uploadedChunks;
+        final long pendingChunks;
+        final int totalFiles;
+        final int completedFiles;
+        final int finalizingFiles;
+        final int failedFiles;
+        final String phase;
+        final String currentFile;
+        final String lastError;
+
+        UploadProgress(long totalChunks,
+                       long uploadedChunks,
+                       long pendingChunks,
+                       int totalFiles,
+                       int completedFiles,
+                       int finalizingFiles,
+                       int failedFiles,
+                       String phase,
+                       String currentFile,
+                       String lastError) {
+            this.totalChunks = Math.max(0L, totalChunks);
+            this.uploadedChunks = Math.max(0L, uploadedChunks);
+            this.pendingChunks = Math.max(0L, pendingChunks);
+            this.totalFiles = Math.max(0, totalFiles);
+            this.completedFiles = Math.max(0, completedFiles);
+            this.finalizingFiles = Math.max(0, finalizingFiles);
+            this.failedFiles = Math.max(0, failedFiles);
+            this.phase = phase;
+            this.currentFile = currentFile;
+            this.lastError = lastError;
+        }
+
+        static UploadProgress idle() {
+            return new UploadProgress(0L, 0L, 0L, 0, 0, 0, 0,
+                    "Idle", null, null);
+        }
+
+        boolean hasRemainingWork() {
+            return pendingChunks > 0 || finalizingFiles > 0 || failedFiles > 0;
+        }
+
+        int completionPercent() {
+            if (totalChunks <= 0L) {
+                return hasRemainingWork() ? 0 : 100;
+            }
+            int pct = (int) Math.max(0L, Math.min(100L, (uploadedChunks * 100L) / totalChunks));
+            if (hasRemainingWork() && pct >= 100) {
+                return 99;
+            }
+            return pct;
+        }
+    }
+
     private static final class SyncRequest {
         @SerializedName("clientId")
         String clientId;
@@ -476,34 +684,5 @@ public final class RecordingUploadDaemon {
         List<Integer> missingChunks = new ArrayList<>();
         @SerializedName("completeOnServer")
         boolean completeOnServer;
-    }
-
-    static final class UploadSummary {
-        long totalChunks;
-        long pendingChunks;
-        long initialPendingChunks;
-        int failedFiles;
-        int completedFiles;
-        String lastError;
-
-        boolean hasPendingChunks() {
-            return pendingChunks > 0;
-        }
-
-        boolean hasDisplayableProgress() {
-            return totalChunks > 0
-                    || pendingChunks > 0
-                    || initialPendingChunks > 0
-                    || failedFiles > 0
-                    || completedFiles > 0;
-        }
-
-        int completionPercent() {
-            if (totalChunks <= 0) {
-                return 100;
-            }
-            long uploaded = Math.max(0L, totalChunks - pendingChunks);
-            return (int) Math.max(0L, Math.min(100L, (uploaded * 100L) / totalChunks));
-        }
     }
 }
