@@ -6,11 +6,14 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 
 public class FfmpegCmdBuilder {
 
     public enum Vendor { NVIDIA, AMD, INTEL, APPLE, OTHER }
     public enum Os { WINDOWS, LINUX, MAC, OTHER }
+    private static final Pattern NVIDIA_30_SERIES_RENDERER_PATTERN =
+            Pattern.compile("\\brtx\\s*(?:a\\s*)?3\\d{3}\\b", Pattern.CASE_INSENSITIVE);
 
     private record StreamingProfile(
             int targetBitrateKbps,
@@ -72,7 +75,12 @@ public class FfmpegCmdBuilder {
             addSoftwareRgbEncoder(cmd, cpuFilterChain, profile);
         } else {
             switch (vendor) {
-                case NVIDIA -> addNvenc(cmd, cpuFilterChain, profile);
+                case NVIDIA -> {
+                    String renderer = detectGpuRenderer();
+                    boolean preferH264 = isNvidia30SeriesRenderer(renderer);
+                    logNvidiaCodecChoice(preferH264, renderer);
+                    addNvenc(cmd, cpuFilterChain, profile, preferH264);
+                }
                 case AMD -> {
                     if (os == Os.WINDOWS) addAmf(cmd, cpuFilterChain, profile);
                     else                  addVaapi(cmd, vaapiDevice, vaapiFilterChain, profile);
@@ -93,26 +101,46 @@ public class FfmpegCmdBuilder {
         return cmd;
     }
 
-    private static void addNvenc(List<String> cmd, String cpuFilterChain, StreamingProfile profile) {
-        // NVIDIA NVENC HEVC tuned for stream-friendly quality and keyframe cadence.
+    private static String detectGpuRenderer() {
+        String renderer = GL11C.glGetString(GL11C.GL_RENDERER);
+        return renderer == null ? "unknown" : renderer;
+    }
+
+    private static boolean isNvidia30SeriesRenderer(String renderer) {
+        return NVIDIA_30_SERIES_RENDERER_PATTERN.matcher(renderer).find();
+    }
+
+    private static void logNvidiaCodecChoice(boolean preferH264, String renderer) {
+        String codec = preferH264 ? "h264_nvenc" : "hevc_nvenc";
+        String reason = preferH264
+                ? "NVIDIA 3000-series detected; preferring H.264"
+                : "default NVIDIA path; preferring HEVC";
+        System.out.println("[FfmpegCmdBuilder] NVENC codec selection: codec=" + codec
+                + ", renderer='" + renderer + "', reason=" + reason);
+    }
+
+    private static void addNvenc(List<String> cmd, String cpuFilterChain, StreamingProfile profile, boolean preferH264) {
+        // NVIDIA NVENC tuned for stream-friendly quality and keyframe cadence.
+        String nvencCodec = preferH264 ? "h264_nvenc" : "hevc_nvenc";
+        String nvencProfile = preferH264 ? "high" : "main";
         cmd.addAll(Arrays.asList(
                 "-an",
                 "-vf", cpuFilterChain,
-                "-c:v", "hevc_nvenc",
+                "-c:v", nvencCodec,
                 "-preset", profile.nvencPreset(), // p1 (fast) ... p7 (slow/best)
-                "-tune", "hq",
-                "-profile:v", "main",
+                //"-tune", "hq",
+                "-profile:v", nvencProfile,
                 "-rc", "vbr",
                 "-cq", String.valueOf(profile.nvencCq()),
                 "-b:v", kbps(profile.targetBitrateKbps()),
                 "-maxrate", kbps(profile.maxBitrateKbps()),
                 "-bufsize", kbps(profile.bufferSizeKbps()),
-                "-rc-lookahead", "32",
-                "-spatial_aq", "1",
-                "-temporal_aq", "1",
-                "-aq-strength", "10",
-                "-bf", "3",
-                "-g", String.valueOf(profile.gopSize()),
+                //"-rc-lookahead", "32",
+                //"-spatial_aq", "1",
+                //"-temporal_aq", "1",
+                //"-aq-strength", "10",
+                //"-bf", "3",
+                //"-g", String.valueOf(profile.gopSize()),
                 "-pix_fmt", "yuv420p"     // broad decode compatibility
         ));
     }
@@ -250,14 +278,14 @@ public class FfmpegCmdBuilder {
             nvencCq = 26;
             x264Crf = 22;
             rgbCrf = 19;
-            nvencPreset = "p2";
+            nvencPreset = "p1";
         } else {
             baseTargetKbps = 2500;
             baseMaxKbps = 3750;
             nvencCq = 28;
             x264Crf = 23;
             rgbCrf = 20;
-            nvencPreset = "p2";
+            nvencPreset = "p1";
         }
 
         double fpsScale;

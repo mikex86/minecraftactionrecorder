@@ -40,6 +40,7 @@ public class ActionRecorder {
     public static boolean guiRightMouseClicked = false;
 
     public static boolean blockInteracted = false;
+    public static boolean itemUsed = false;
     public static boolean attackPerformed = false;
 
     private static boolean dropItemPressed = false;
@@ -261,7 +262,7 @@ public class ActionRecorder {
         Player player = minecraft.player;
         boolean anyHeldItemInUse = player != null && player.isUsingItem();
         boolean anyScreen = minecraft.screen != null;
-        lastRightClickActive = blockInteracted || (lastRightClickPressed && anyScreen) || anyHeldItemInUse;
+        lastRightClickActive = blockInteracted || itemUsed || (lastRightClickPressed && anyScreen) || anyHeldItemInUse;
     }
 
     private static final int TARGET_FRAME_RATE = 60;
@@ -275,9 +276,8 @@ public class ActionRecorder {
         if (shutdownRequested) {
             return;
         }
-        // InputFaker.doRandomInput();
+        // InputFakerRandomItems.doRandomInput();
 
-        // set to target resolution if not equal
         // set to target resolution if not equal
         /*if (minecraft.getWindow().getWidth() != TARGET_WINDOW_WIDTH || minecraft.getWindow().getHeight() != TARGET_WINDOW_HEIGHT) {
             minecraft.getWindow().setWindowed(TARGET_WINDOW_WIDTH, TARGET_WINDOW_HEIGHT);
@@ -328,6 +328,7 @@ public class ActionRecorder {
         guiRightMouseClicked = false;
 
         blockInteracted = false;
+        itemUsed = false;
         attackPerformed = false;
 
         trackYaw(player.getYRot());
@@ -452,7 +453,7 @@ public class ActionRecorder {
                 throw new RuntimeException(e);
             }
         }
-        if (FrameCapture.grabMainFramebufferRGBAsync(frameBuffer)) {
+        if (AsyncFrameCapture.grabMainFramebufferRGBAsync(frameBuffer)) {
             renderCursor(mc.screen != null, frameBuffer);
             if (videoWriter != null) {
                 videoWriter.pushFrame(frameBuffer);

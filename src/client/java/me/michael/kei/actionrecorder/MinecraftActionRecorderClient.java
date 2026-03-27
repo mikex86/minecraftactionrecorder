@@ -2,13 +2,17 @@ package me.michael.kei.actionrecorder;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.AlertScreen;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MinecraftActionRecorderClient implements ClientModInitializer {
+
 	private static final AtomicBoolean SHUTDOWN_FLOW_STARTED = new AtomicBoolean(false);
+
 	static {
 		forceAwtUiMode();
 	}
@@ -34,25 +38,30 @@ public class MinecraftActionRecorderClient implements ClientModInitializer {
 		uploadDaemon.start();
 
 		// Run synchronously during client stopping so there is one authoritative shutdown path.
-		ClientLifecycleEvents.CLIENT_STOPPING.register(client -> runShutdownFlow(uploadDaemon, "client_stopping"));
+		ClientLifecycleEvents.CLIENT_STOPPING.register(client -> runShutdownFlow(client, uploadDaemon, "client_stopping"));
 	}
 
-	private static void runShutdownFlow(RecordingUploadDaemon uploadDaemon, String source) {
+	private static void runShutdownFlow(Minecraft client, RecordingUploadDaemon uploadDaemon, String source) {
 		if (!SHUTDOWN_FLOW_STARTED.compareAndSet(false, true)) {
 			System.out.println("[UploadDaemon] Shutdown flow already running; ignoring source=" + source);
 			return;
 		}
-		ActionRecorder.requestShutdownSignal();
-		System.out.println("[UploadDaemon] Starting shutdown flow from " + source);
 		try {
-			System.out.println("[UploadDaemon] Calling ActionRecorder.shutdownRecording()");
-			ActionRecorder.shutdownRecording();
-			System.out.println("[UploadDaemon] ActionRecorder.shutdownRecording() returned; starting drain UI");
-			uploadDaemon.shutdownAndDrainWithUi();
-			System.out.println("[UploadDaemon] Shutdown flow finished");
+			long windowHandle = client.getWindow().handle();
+			if (windowHandle != 0L) {
+				GLFW.glfwHideWindow(windowHandle);
+				System.out.println("[UploadDaemon] GLFW window hidden for shutdown upload drain");
+			}
 		} catch (Throwable t) {
-			System.err.println("[UploadDaemon] Shutdown flow crashed: " + t);
+			System.err.println("[UploadDaemon] Failed to hide GLFW window during shutdown: " + t);
 		}
+
+		try {
+			ActionRecorder.shutdownRecording();
+		} catch (Throwable t) {
+			System.err.println("[UploadDaemon] Failed to finalize recording before upload drain: " + t);
+		}
+		uploadDaemon.blockUntilCurrentUploadsComplete();
 	}
 
 	private static void forceAwtUiMode() {

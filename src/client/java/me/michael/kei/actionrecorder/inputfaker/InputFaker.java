@@ -1,6 +1,7 @@
-package me.michael.kei.actionrecorder;
+package me.michael.kei.actionrecorder.inputfaker;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import me.michael.kei.actionrecorder.Timer;
 import net.minecraft.client.Camera;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
