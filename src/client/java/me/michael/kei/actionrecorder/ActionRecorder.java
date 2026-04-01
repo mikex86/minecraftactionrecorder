@@ -40,6 +40,7 @@ public class ActionRecorder {
     public static boolean guiRightMouseClicked = false;
 
     public static boolean blockInteracted = false;
+    public static boolean itemUsed = false;
     public static boolean attackPerformed = false;
 
     private static boolean dropItemPressed = false;
@@ -200,6 +201,34 @@ public class ActionRecorder {
         openChatDown = openChatState;
     }
 
+    private static double toLoggedCursorX(Minecraft minecraft, double rawMouseX) {
+        int windowWidth = minecraft.getWindow().getWidth();
+        int pixelWidth = minecraft.getWindow().getScreenWidth();
+        if (windowWidth <= 0 || pixelWidth <= 0) {
+            return rawMouseX;
+        }
+
+        double scaleX = (double) pixelWidth / (double) windowWidth;
+        if (Math.abs(scaleX - 1.0d) < 1.0e-9) {
+            return rawMouseX;
+        }
+        return rawMouseX * scaleX;
+    }
+
+    private static double toLoggedCursorY(Minecraft minecraft, double rawMouseY) {
+        int windowHeight = minecraft.getWindow().getHeight();
+        int pixelHeight = minecraft.getWindow().getScreenHeight();
+        if (windowHeight <= 0 || pixelHeight <= 0) {
+            return rawMouseY;
+        }
+
+        double scaleY = (double) pixelHeight / (double) windowHeight;
+        if (Math.abs(scaleY - 1.0d) < 1.0e-9) {
+            return rawMouseY;
+        }
+        return rawMouseY * scaleY;
+    }
+
     private static void trackCursorMoveX(double cursorX) {
         if (lastCursorX == cursorX) {
             return;
@@ -233,7 +262,7 @@ public class ActionRecorder {
         Player player = minecraft.player;
         boolean anyHeldItemInUse = player != null && player.isUsingItem();
         boolean anyScreen = minecraft.screen != null;
-        lastRightClickActive = blockInteracted || (lastRightClickPressed && anyScreen) || anyHeldItemInUse;
+        lastRightClickActive = blockInteracted || itemUsed || (lastRightClickPressed && anyScreen) || anyHeldItemInUse;
     }
 
     private static final int TARGET_FRAME_RATE = 60;
@@ -247,9 +276,8 @@ public class ActionRecorder {
         if (shutdownRequested) {
             return;
         }
-        // InputFaker.doRandomInput();
+        // InputFakerRandomItems.doRandomInput();
 
-        // set to target resolution if not equal
         // set to target resolution if not equal
         /*if (minecraft.getWindow().getWidth() != TARGET_WINDOW_WIDTH || minecraft.getWindow().getHeight() != TARGET_WINDOW_HEIGHT) {
             minecraft.getWindow().setWindowed(TARGET_WINDOW_WIDTH, TARGET_WINDOW_HEIGHT);
@@ -300,6 +328,7 @@ public class ActionRecorder {
         guiRightMouseClicked = false;
 
         blockInteracted = false;
+        itemUsed = false;
         attackPerformed = false;
 
         trackYaw(player.getYRot());
@@ -338,8 +367,8 @@ public class ActionRecorder {
             }
             double mouseX = minecraft.mouseHandler.xpos();
             double mouseY = minecraft.mouseHandler.ypos();
-            trackCursorMoveX(mouseX);
-            trackCursorMoveY(mouseY);
+            trackCursorMoveX(toLoggedCursorX(minecraft, mouseX));
+            trackCursorMoveY(toLoggedCursorY(minecraft, mouseY));
         } else {
             cursorXDelta = 0;
             cursorYDelta = 0;
@@ -347,8 +376,9 @@ public class ActionRecorder {
         }
         prevIsScreenOpen = minecraft.screen != null;
 
-        saveFrame();
-        saveActionState();
+        if (saveFrame()) {
+            saveActionState();
+        }
         Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
         pressedScreenKeys.clear();
     }
@@ -376,7 +406,7 @@ public class ActionRecorder {
         }
     }
 
-    private static synchronized void saveFrame() {
+    private static synchronized boolean saveFrame() {
         Minecraft mc = Minecraft.getInstance();
         int width = mc.getWindow().getWidth();
         int height = mc.getWindow().getHeight();
@@ -396,7 +426,7 @@ public class ActionRecorder {
                         System.err.println("[ActionRecorder] FFmpeg unavailable; recording disabled: "
                                 + FfmpegRuntimeBootstrap.getStartupError());
                     }
-                    return;
+                    return false;
                 }
                 String ffmpegExecutable = FfmpegRuntimeBootstrap.getFfmpegExecutable();
                 videoWriter = new FfmpegPipeWriter(
@@ -423,11 +453,14 @@ public class ActionRecorder {
                 throw new RuntimeException(e);
             }
         }
-        FrameCapture.grabMainFramebufferRGB(frameBuffer);
-        renderCursor(mc.screen != null, frameBuffer);
-        if (videoWriter != null) {
-            videoWriter.pushFrame(frameBuffer);
+        if (AsyncFrameCapture.grabMainFramebufferRGBAsync(frameBuffer)) {
+            renderCursor(mc.screen != null, frameBuffer);
+            if (videoWriter != null) {
+                videoWriter.pushFrame(frameBuffer);
+            }
+            return true;
         }
+        return false;
     }
 
     private static final String cursorResourcePath = "/assets/minecraftactionrecorder/cursor.png";
@@ -440,23 +473,11 @@ public class ActionRecorder {
         if (!show) {
             return;
         }
-        Minecraft mc = Minecraft.getInstance();
         int windowWidth = frameBufferWidth;
         int windowHeight = frameBufferHeight;
 
-        int guiWidth = mc.getWindow().getGuiScaledWidth();
-        int guiHeight = mc.getWindow().getGuiScaledHeight();
-
-        // MouseHandler reports GUI-scaled coordinates; captured frames are framebuffer pixels.
-        double mouseXInFramebuffer = lastCursorX;
-        double mouseYInFramebuffer = lastCursorY;
-        if (guiWidth > 0 && guiHeight > 0) {
-            mouseXInFramebuffer = lastCursorX * ((double) windowWidth / (double) guiWidth);
-            mouseYInFramebuffer = lastCursorY * ((double) windowHeight / (double) guiHeight);
-        }
-
-        int mouseX = (int) mouseXInFramebuffer;
-        int mouseY = (int) (windowHeight - mouseYInFramebuffer - cursorHeight);
+        int mouseX = (int) lastCursorX;
+        int mouseY = (int) (windowHeight - lastCursorY - cursorHeight);
 
         int startX = Math.max(0, mouseX);
         int startY = Math.max(0, mouseY);

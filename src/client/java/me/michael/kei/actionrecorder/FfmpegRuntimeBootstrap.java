@@ -27,9 +27,9 @@ import java.util.zip.ZipInputStream;
 public final class FfmpegRuntimeBootstrap {
 
     private static final String WINDOWS_FFMPEG_ZIP_URL =
-            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
-    private static final String WINDOWS_FFMPEG_ZIP_FILE = "ffmpeg-release-essentials.zip";
-    private static final String WINDOWS_FFMPEG_EXTRACT_DIR = "ffmpeg-release-essentials";
+            "https://github.com/mikex86/minecraftactionrecorder/releases/download/v1.0.0/ffmpeg.zip";
+    private static final String WINDOWS_FFMPEG_ZIP_FILE = "ffmpeg.zip";
+    private static final String WINDOWS_FFMPEG_EXTRACT_DIR = "ffmpeg";
     private static final String WINDOWS_FFMPEG_EXE_RELATIVE = "bin/ffmpeg.exe";
     private static final String MACOS_HOMEBREW_FFMPEG = "/opt/homebrew/bin/ffmpeg";
 

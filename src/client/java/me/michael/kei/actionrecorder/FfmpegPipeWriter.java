@@ -59,7 +59,6 @@ public final class FfmpegPipeWriter implements AutoCloseable {
                     if (frame == POISON) break;
                     if (frame.length != bytesPerFrame) continue; // or throw
                     ffIn.write(frame);
-                    ffIn.flush();
 
                     // Return byte[] to pool
                     synchronized (bytePool) {
