@@ -1,6 +1,5 @@
 package me.michael.kei.actionrecorder;
 
-import com.mojang.blaze3d.pipeline.RenderTarget;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -16,11 +15,9 @@ public class FrameCapture {
 
     public static void grabMainFramebufferRGB(byte[] rgbOut) {
         Minecraft mc = Minecraft.getInstance();
-        RenderTarget target = mc.getMainRenderTarget();
-        int drawFBO = target.frameBufferId;
-
-        int w = target.width;
-        int h = target.height;
+        int drawFBO = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        int w = mc.getWindow().getWidth();
+        int h = mc.getWindow().getHeight();
 
         int needed = w * h * 3;
         if (rgbScratch.capacity() < needed) {
@@ -37,10 +34,13 @@ public class FrameCapture {
         int prevReadBuffer = GL11.glGetInteger(GL11.GL_READ_BUFFER);
 
         try {
-            // Bind the game's color buffer as the read FBO
+            // Read exactly from the currently active draw FBO.
             GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, drawFBO);
-            // Most Minecraft targets use COLOR_ATTACHMENT0
-            GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+            if (drawFBO == 0) {
+                GL11.glReadBuffer(GL11.GL_BACK);
+            } else {
+                GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+            }
 
             // Read tightly packed
             GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
