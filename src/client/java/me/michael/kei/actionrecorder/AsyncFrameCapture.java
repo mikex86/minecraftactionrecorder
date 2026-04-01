@@ -175,20 +175,4 @@ public final class AsyncFrameCapture {
         sizeBytes = -1;
     }
 
-    /**
-     * Optional helper if you want top-left origin instead of OpenGL's bottom-left origin.
-     */
-    public static void flipRgbVertical(byte[] rgb, int width, int height) {
-        int stride = width * 3;
-        byte[] row = new byte[stride];
-
-        for (int y = 0; y < height / 2; y++) {
-            int top = y * stride;
-            int bottom = (height - 1 - y) * stride;
-
-            System.arraycopy(rgb, top, row, 0, stride);
-            System.arraycopy(rgb, bottom, rgb, top, stride);
-            System.arraycopy(row, 0, rgb, bottom, stride);
-        }
-    }
 }

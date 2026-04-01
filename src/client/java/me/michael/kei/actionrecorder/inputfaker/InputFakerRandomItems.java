@@ -140,7 +140,7 @@ public final class InputFakerRandomItems {
 
         ensureDatasetFrameBuffer(sourceWidth, sourceHeight);
         FrameCapture.grabMainFramebufferRGB(datasetFrameBuffer);
-        AsyncFrameCapture.flipRgbVertical(datasetFrameBuffer, sourceWidth, sourceHeight);
+        flipRgbVertical(datasetFrameBuffer, sourceWidth, sourceHeight);
         BufferedImage sourceImage = rgbToBufferedImage(datasetFrameBuffer, sourceWidth, sourceHeight);
         BufferedImage scaledImage = resizeTo240p(sourceImage);
 
@@ -159,6 +159,20 @@ public final class InputFakerRandomItems {
                 datasetWriteErrorLogged = true;
                 System.err.println("[InputFakerRandomItems] Failed to write dataset frame: " + e.getMessage());
             }
+        }
+    }
+
+    public static void flipRgbVertical(byte[] rgb, int width, int height) {
+        int stride = width * 3;
+        byte[] row = new byte[stride];
+
+        for (int y = 0; y < height / 2; y++) {
+            int top = y * stride;
+            int bottom = (height - 1 - y) * stride;
+
+            System.arraycopy(rgb, top, row, 0, stride);
+            System.arraycopy(rgb, bottom, rgb, top, stride);
+            System.arraycopy(row, 0, rgb, bottom, stride);
         }
     }
 
