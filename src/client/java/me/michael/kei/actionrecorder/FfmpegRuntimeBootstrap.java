@@ -27,10 +27,11 @@ import java.util.zip.ZipInputStream;
 public final class FfmpegRuntimeBootstrap {
 
     private static final String WINDOWS_FFMPEG_ZIP_URL =
-            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
-    private static final String WINDOWS_FFMPEG_ZIP_FILE = "ffmpeg-release-essentials.zip";
-    private static final String WINDOWS_FFMPEG_EXTRACT_DIR = "ffmpeg-release-essentials";
+            "https://github.com/mikex86/minecraftactionrecorder/releases/download/v1.0.0/ffmpeg.zip";
+    private static final String WINDOWS_FFMPEG_ZIP_FILE = "ffmpeg.zip";
+    private static final String WINDOWS_FFMPEG_EXTRACT_DIR = "ffmpeg";
     private static final String WINDOWS_FFMPEG_EXE_RELATIVE = "bin/ffmpeg.exe";
+    private static final String MACOS_HOMEBREW_FFMPEG = "/opt/homebrew/bin/ffmpeg";
 
     private static volatile boolean initialized;
     private static volatile String ffmpegExecutable = "ffmpeg";
@@ -72,6 +73,19 @@ public final class FfmpegRuntimeBootstrap {
         ProbeResult pathProbe = probeFfmpeg("ffmpeg", nvidiaHost);
         if (pathProbe.success) {
             System.out.println("[FFmpegSetup] Using ffmpeg from PATH");
+            return;
+        }
+
+        if (os == FfmpegCmdBuilder.Os.MAC) {
+            ProbeResult homebrewProbe = probeFfmpeg(MACOS_HOMEBREW_FFMPEG, nvidiaHost);
+            if (homebrewProbe.success) {
+                ffmpegExecutable = MACOS_HOMEBREW_FFMPEG;
+                System.out.println("[FFmpegSetup] Using Homebrew FFmpeg: " + ffmpegExecutable);
+                return;
+            }
+            startupError = "FFmpeg setup failed: PATH probe: " + pathProbe.reason
+                    + "; Homebrew probe (" + MACOS_HOMEBREW_FFMPEG + "): " + homebrewProbe.reason;
+            System.err.println("[FFmpegSetup] " + startupError);
             return;
         }
 
