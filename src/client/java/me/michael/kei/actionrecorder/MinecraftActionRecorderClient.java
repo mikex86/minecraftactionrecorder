@@ -76,7 +76,7 @@ public final class MinecraftActionRecorderClient {
             System.out.println("[UploadDaemon] Calling ActionRecorder.shutdownRecording()");
             ActionRecorder.shutdownRecording();
             System.out.println("[UploadDaemon] ActionRecorder.shutdownRecording() returned; starting drain UI");
-            uploadDaemon.shutdownAndDrainWithUi();
+            uploadDaemon.blockUntilCurrentUploadsComplete();
         }, "recording-upload-shutdown-worker");
         shutdownThread.setDaemon(false);
         shutdownFlowThread = shutdownThread;
