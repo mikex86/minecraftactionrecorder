@@ -84,24 +84,11 @@ public final class FfmpegPipeWriter implements AutoCloseable {
 
     private static final byte[] POISON = new byte[0];
 
-    public void pushFrame(byte[] rgb) {
+    public void pushFrame(byte[] rgb) throws InterruptedException {
         if (!running) return;
         if (rgb.length != bytesPerFrame) return;
         byte[] copy = copyPooled(rgb);
-        try {
-            // Do not block indefinitely; dropping a frame is better than deadlocking shutdown.
-            boolean accepted = queue.offer(copy, 50, TimeUnit.MILLISECONDS);
-            if (!accepted) {
-                synchronized (bytePool) {
-                    bytePool.offer(copy);
-                }
-            }
-        } catch (InterruptedException ie) {
-            synchronized (bytePool) {
-                bytePool.offer(copy);
-            }
-            Thread.currentThread().interrupt();
-        }
+        queue.offer(copy, 30, TimeUnit.SECONDS); // We cannot drop frames, else we violate the action contract
     }
 
     private byte[] copyPooled(byte[] src) {

@@ -6,7 +6,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Input;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec2;
+import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -82,8 +85,23 @@ public class ActionRecorder {
 
     private static float yawDelta = 0;
     private static float pitchDelta = 0;
+    private static float currentPitch = 0;
+
     private static double cursorXDelta = 0;
     private static double cursorYDelta = 0;
+
+    private static double motionForward = 0;
+    private static double motionUp = 0;
+    private static double motionSideways = 0;
+
+    private static double accelerationForward = 0;
+    private static double accelerationUp = 0;
+    private static double accelerationSideways = 0;
+
+    private static double moveVectorFwd = 0;
+    private static double moveVectorSideways = 0;
+
+    private static float currentSwingProgress = 0;
 
     private static void trackYaw(float yaw) {
         if (lastYaw == yaw) {
@@ -104,58 +122,34 @@ public class ActionRecorder {
     }
 
     private static void trackScreenOpen(boolean screenOpenState) {
-        if (lastScreenOpenState == screenOpenState) {
-            return;
-        }
         lastScreenOpenState = screenOpenState;
     }
 
     private static void trackMoveForward(boolean forwardState) {
-        if (lastForwardState == forwardState) {
-            return;
-        }
         lastForwardState = forwardState;
     }
 
     private static void trackMoveBackward(boolean backwardState) {
-        if (lastBackwardState == backwardState) {
-            return;
-        }
         lastBackwardState = backwardState;
     }
 
     private static void trackMoveLeft(boolean leftState) {
-        if (lastLeftState == leftState) {
-            return;
-        }
         lastLeftState = leftState;
     }
 
     private static void trackMoveRight(boolean rightState) {
-        if (lastRightState == rightState) {
-            return;
-        }
         lastRightState = rightState;
     }
 
     private static void trackCrouch(boolean crouchState) {
-        if (lastCrouchState == crouchState) {
-            return;
-        }
         lastCrouchState = crouchState;
     }
 
     private static void trackSprint(boolean sprintState) {
-        if (lastSprintState == sprintState) {
-            return;
-        }
         lastSprintState = sprintState;
     }
 
     private static void trackJump(boolean jumpState) {
-        if (lastJumpState == jumpState) {
-            return;
-        }
         lastJumpState = jumpState;
     }
 
@@ -190,9 +184,6 @@ public class ActionRecorder {
     }
 
     private static void trackPlayerMenuOpen(boolean playerMenuOpenState) {
-        if (playerMenuOpen == playerMenuOpenState) {
-            return;
-        }
         playerMenuOpen = playerMenuOpenState;
     }
 
@@ -201,48 +192,14 @@ public class ActionRecorder {
         openChatDown = openChatState;
     }
 
-    private static double toLoggedCursorX(Minecraft minecraft, double rawMouseX) {
-        int windowWidth = minecraft.getWindow().getWidth();
-        int pixelWidth = minecraft.getWindow().getScreenWidth();
-        if (windowWidth <= 0 || pixelWidth <= 0) {
-            return rawMouseX;
-        }
-
-        double scaleX = (double) pixelWidth / (double) windowWidth;
-        if (Math.abs(scaleX - 1.0d) < 1.0e-9) {
-            return rawMouseX;
-        }
-        return rawMouseX * scaleX;
-    }
-
-    private static double toLoggedCursorY(Minecraft minecraft, double rawMouseY) {
-        int windowHeight = minecraft.getWindow().getHeight();
-        int pixelHeight = minecraft.getWindow().getScreenHeight();
-        if (windowHeight <= 0 || pixelHeight <= 0) {
-            return rawMouseY;
-        }
-
-        double scaleY = (double) pixelHeight / (double) windowHeight;
-        if (Math.abs(scaleY - 1.0d) < 1.0e-9) {
-            return rawMouseY;
-        }
-        return rawMouseY * scaleY;
-    }
-
-    private static void trackCursorMoveX(double cursorX) {
-        if (lastCursorX == cursorX) {
-            return;
-        }
+    private static void trackCursorMoveX(double cursorX, int fbWidth) {
         cursorXDelta = cursorX - lastCursorX;
-        lastCursorX = cursorX;
+        lastCursorX = cursorX / fbWidth;
     }
 
-    private static void trackCursorMoveY(double cursorY) {
-        if (lastCursorY == cursorY) {
-            return;
-        }
+    private static void trackCursorMoveY(double cursorY, int fbHeight) {
         cursorYDelta = cursorY - lastCursorY;
-        lastCursorY = cursorY;
+        lastCursorY = cursorY / fbHeight;
     }
 
     private static void trackLeftClick(boolean leftClickState, Minecraft minecraft) {
@@ -334,17 +291,53 @@ public class ActionRecorder {
         trackYaw(player.getYRot());
         trackPitch(player.getXRot());
 
+        Vec3 deltaMovement = player.getDeltaMovement();
+
+        double yawRadians = Math.toRadians(player.getYRot());
+        double forwardX = -Math.sin(yawRadians);
+        double forwardZ = Math.cos(yawRadians);
+        double rightX = -forwardZ;
+        double rightZ = forwardX;
+
+        // motion (velocity)
+        double motionX = deltaMovement.x;
+        double motionY = deltaMovement.y;
+        double motionZ = deltaMovement.z;
+        motionForward = (motionX * forwardX) + (motionZ * forwardZ);
+        motionSideways = (motionX * rightX) + (motionZ * rightZ);
+        motionUp = motionY;
+
+        // acceleration
+        // xxa,zza,yya are not axis-aligned but are instead aligned to the player's current rotation,
+        // so no need to transform
+        double accelX = player.xxa;
+        double accelZ = player.zza;
+        double accelY = player.yya;
+        accelerationForward = accelZ; // z is fwd, don't ask
+        accelerationSideways = accelX;
+        accelerationUp = accelY;
+
+        currentPitch = (float) Math.toRadians(player.getXRot());
+
         trackScreenOpen(minecraft.screen != null);
-        trackMoveForward(minecraft.options.keyUp.isDown() && minecraft.screen == null);
-        trackMoveBackward(minecraft.options.keyDown.isDown() && minecraft.screen == null);
-        trackMoveLeft(minecraft.options.keyLeft.isDown() && minecraft.screen == null);
-        trackMoveRight(minecraft.options.keyRight.isDown() && minecraft.screen == null);
-        trackCrouch((minecraft.options.keyShift.isDown() && minecraft.screen == null)
+
+        Input keyPresses = player.input.keyPresses;
+        Vec2 moveVector = player.input.getMoveVector();
+        moveVectorFwd = moveVector.x;
+        moveVectorSideways = moveVector.y;
+
+        currentSwingProgress = player.attackAnim;
+
+        trackMoveForward(keyPresses.forward() && minecraft.screen == null);
+        trackMoveBackward(keyPresses.backward() && minecraft.screen == null);
+        trackMoveLeft(keyPresses.left() && minecraft.screen == null);
+        trackMoveRight(keyPresses.right() && minecraft.screen == null);
+        trackCrouch((keyPresses.shift() && minecraft.screen == null)
                 ||
                 (InputConstants.isKeyDown(minecraft.getWindow(), InputConstants.KEY_LSHIFT) && (minecraft.screen != null) && (lastLeftClickActive || lastRightClickActive))
         ); // this one has an effect on click in the inventory screen
 
-        trackJump(minecraft.options.keyJump.isDown() && (minecraft.player.onGround() || minecraft.player.isInWater() || minecraft.player.getAbilities().flying)); // only log jump if on ground or in water or when flying, where jump will move up
+        trackJump(keyPresses.jump() && (minecraft.player.onGround() || minecraft.player.isInWater() || minecraft.player.getAbilities().flying)); // only log jump if on ground or in water or when flying, where jump will move up
         trackDropItem(minecraft.options.keyDrop.isDown());
         trackSprint(minecraft.player.isSprinting() || (minecraft.options.keySprint.isDown() && dropItemPressed)); // log actual sprinting state
 
@@ -360,15 +353,17 @@ public class ActionRecorder {
             if (!prevIsScreenOpen) {
                 timeScreenOpened = System.currentTimeMillis();
             }
-            if ((System.currentTimeMillis() - timeScreenOpened) < 10) {
+            double mouseX = minecraft.mouseHandler.xpos();
+            double mouseY = minecraft.mouseHandler.ypos();
+            trackCursorMoveX(mouseX, minecraft.getWindow().getWidth());
+            trackCursorMoveY(mouseY, minecraft.getWindow().getHeight());
+            if ((System.currentTimeMillis() - timeScreenOpened) < 25) {
                 // clear all keys in the first 10ms after opening a screen... This is a bit of a hack
                 // but it avoids reading the key as a typed character which opened the screen itself.
                 pressedScreenKeys.clear();
+                cursorXDelta = 0;
+                cursorYDelta = 0;
             }
-            double mouseX = minecraft.mouseHandler.xpos();
-            double mouseY = minecraft.mouseHandler.ypos();
-            trackCursorMoveX(toLoggedCursorX(minecraft, mouseX));
-            trackCursorMoveY(toLoggedCursorY(minecraft, mouseY));
         } else {
             cursorXDelta = 0;
             cursorYDelta = 0;
@@ -433,7 +428,7 @@ public class ActionRecorder {
                         ffmpegExecutable,
                         videoPath,
                         width, height, TARGET_FRAME_RATE,
-                        128
+                        1024
                 );
                 logWriter = new ActionLogWriter(logPath);
                 currentVideoCapturePath = videoPath;
@@ -453,14 +448,16 @@ public class ActionRecorder {
                 throw new RuntimeException(e);
             }
         }
-        if (AsyncFrameCapture.grabMainFramebufferRGBAsync(frameBuffer)) {
-            renderCursor(mc.screen != null, frameBuffer);
-            if (videoWriter != null) {
+        FrameCapture.grabMainFramebufferRGB(frameBuffer);
+        renderCursor(mc.screen != null, frameBuffer);
+        if (videoWriter != null) {
+            try {
                 videoWriter.pushFrame(frameBuffer);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
-            return true;
         }
-        return false;
+        return true;
     }
 
     private static final String cursorResourcePath = "/assets/minecraftactionrecorder/cursor.png";
@@ -581,7 +578,34 @@ public class ActionRecorder {
             };
             try {
                 // pressedScreenKeys = List<Character>
-                logWriter.logStates(states, new float[]{yawDelta, pitchDelta}, new double[]{cursorXDelta, cursorYDelta}, pressedScreenKeys);
+                logWriter.logStates(states,
+                        new float[]{
+                                // yaw & pitch delta
+                                yawDelta, pitchDelta,
+                                // current rotation pitch
+                                currentPitch
+                        },
+                        new double[]{
+                                // cursor delta
+                                cursorXDelta, cursorYDelta,
+
+                                // player motion vector
+                                motionForward,
+                                motionUp,
+                                motionSideways,
+
+                                // player acceleration vector
+                                accelerationForward,
+                                accelerationUp,
+                                accelerationSideways,
+
+                                // movement input vector
+                                moveVectorFwd,
+                                moveVectorSideways,
+
+                                // swing progress
+                                currentSwingProgress
+                        }, pressedScreenKeys);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

@@ -252,29 +252,29 @@ public class FfmpegCmdBuilder {
 
         // Bitrates are tuned toward broadly stream-friendly ranges and scaled by FPS below.
         if (pixels >= 3840L * 2160L) {
-            baseTargetKbps = 28000;
-            baseMaxKbps = 42000;
+            baseTargetKbps = 10000;
+            baseMaxKbps = 20000;
             nvencCq = 20;
             x264Crf = 18;
             rgbCrf = 16;
             nvencPreset = "p1";
         } else if (pixels >= 2560L * 1440L) {
-            baseTargetKbps = 16000;
-            baseMaxKbps = 24000;
+            baseTargetKbps = 6000;
+            baseMaxKbps = 12000;
             nvencCq = 22;
             x264Crf = 19;
             rgbCrf = 17;
             nvencPreset = "p1";
         } else if (pixels >= 1920L * 1080L) {
-            baseTargetKbps = 9000;
-            baseMaxKbps = 13500;
+            baseTargetKbps = 3000;
+            baseMaxKbps = 6500;
             nvencCq = 24;
             x264Crf = 20;
             rgbCrf = 18;
             nvencPreset = "p1";
         } else if (pixels >= 1280L * 720L) {
-            baseTargetKbps = 4500;
-            baseMaxKbps = 6750;
+            baseTargetKbps = 1500;
+            baseMaxKbps = 3000;
             nvencCq = 26;
             x264Crf = 22;
             rgbCrf = 19;
