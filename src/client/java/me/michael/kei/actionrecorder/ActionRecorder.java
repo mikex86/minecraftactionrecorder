@@ -193,13 +193,13 @@ public class ActionRecorder {
     }
 
     private static void trackCursorMoveX(double cursorX, int fbWidth) {
-        cursorXDelta = cursorX - lastCursorX;
-        lastCursorX = cursorX / fbWidth;
+        cursorXDelta = (cursorX - lastCursorX) / fbWidth;
+        lastCursorX = cursorX;
     }
 
     private static void trackCursorMoveY(double cursorY, int fbHeight) {
-        cursorYDelta = cursorY - lastCursorY;
-        lastCursorY = cursorY / fbHeight;
+        cursorYDelta = (cursorY - lastCursorY) / fbHeight;
+        lastCursorY = cursorY;
     }
 
     private static void trackLeftClick(boolean leftClickState, Minecraft minecraft) {
@@ -314,7 +314,7 @@ public class ActionRecorder {
         double accelZ = player.zza;
         double accelY = player.yya;
         accelerationForward = accelZ; // z is fwd, don't ask
-        accelerationSideways = accelX;
+        accelerationSideways = -accelX; // -x is right for some reason
         accelerationUp = accelY;
 
         currentPitch = (float) Math.toRadians(player.getXRot());
@@ -323,8 +323,8 @@ public class ActionRecorder {
 
         Input keyPresses = player.input.keyPresses;
         Vec2 moveVector = player.input.getMoveVector();
-        moveVectorFwd = moveVector.x;
-        moveVectorSideways = moveVector.y;
+        moveVectorFwd = moveVector.y; // y is forward, don't ask
+        moveVectorSideways = -moveVector.x; // -x is right again
 
         currentSwingProgress = player.attackAnim;
 
