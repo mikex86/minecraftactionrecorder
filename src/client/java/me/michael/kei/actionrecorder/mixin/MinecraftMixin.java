@@ -21,6 +21,12 @@ public class MinecraftMixin {
         Util.timeSource = TimeScaler::scaledNanoTime;
     }
 
+    // on timer tick
+    @Inject(method = "tick()V", at = @At("HEAD"))
+    private void onGameTick(CallbackInfo ci) {
+        ActionRecorder.onGameTick();
+    }
+
     @Inject(method = "startAttack()Z", at = @At("HEAD"))
     private void onStartAttack(CallbackInfoReturnable<Boolean> ci) {
         ActionRecorder.attackPerformed = true;

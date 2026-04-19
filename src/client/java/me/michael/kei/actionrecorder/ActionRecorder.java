@@ -31,6 +31,8 @@ public class ActionRecorder {
     private static boolean lastCrouchState = false;
     private static boolean lastSprintState = false;
     private static boolean lastJumpState = false;
+    private static boolean pendingJumpPress = false;
+    private static boolean lastEligibleJumpTickState = false;
     private static double lastCursorX = 0;
     private static double lastCursorY = 0;
 
@@ -153,6 +155,21 @@ public class ActionRecorder {
         lastJumpState = jumpState;
     }
 
+    private static void updateJumpPressLatch(Minecraft minecraft) {
+        LocalPlayer player = minecraft.player;
+        if (player == null) {
+            lastEligibleJumpTickState = false;
+            return;
+        }
+
+        boolean jumpEligibleNow = minecraft.options.keyJump.isDown()
+                && (player.onGround() || player.isInWater() || player.getAbilities().flying);
+        if (jumpEligibleNow && !lastEligibleJumpTickState) {
+            pendingJumpPress = true;
+        }
+        lastEligibleJumpTickState = jumpEligibleNow;
+    }
+
     private static void trackDropItem(boolean dropDown) {
         dropItemPressed = dropItemDown != dropDown && dropDown; // pressed state is only true on the frame the key is pressed down
         dropItemDown = dropDown;
@@ -227,13 +244,16 @@ public class ActionRecorder {
     private static int lastWidth = 0;
     private static int lastHeight = 0;
 
+    private static int TARGET_WINDOW_WIDTH = 1920;
+    private static int TARGET_WINDOW_HEIGHT = 1080;
+
     private static final Timer timer = new Timer(TARGET_FRAME_RATE);
 
     public static void captureState(Minecraft minecraft) {
         if (shutdownRequested) {
             return;
         }
-        // InputFakerRandomItems.doRandomInput();
+        updateJumpPressLatch(minecraft);
 
         // set to target resolution if not equal
         /*if (minecraft.getWindow().getWidth() != TARGET_WINDOW_WIDTH || minecraft.getWindow().getHeight() != TARGET_WINDOW_HEIGHT) {
@@ -264,6 +284,9 @@ public class ActionRecorder {
     private static void resetRecording() {
         closeWritersAndMarkUploadsFinished();
         pressedScreenKeys.clear();
+        pendingJumpPress = false;
+        lastEligibleJumpTickState = false;
+        lastJumpState = false;
     }
 
     private static void recordCaptureFrame(Minecraft minecraft) {
@@ -337,7 +360,7 @@ public class ActionRecorder {
                 (InputConstants.isKeyDown(minecraft.getWindow(), InputConstants.KEY_LSHIFT) && (minecraft.screen != null) && (lastLeftClickActive || lastRightClickActive))
         ); // this one has an effect on click in the inventory screen
 
-        trackJump(keyPresses.jump() && (minecraft.player.onGround() || minecraft.player.isInWater() || minecraft.player.getAbilities().flying)); // only log jump if on ground or in water or when flying, where jump will move up
+        trackJump(pendingJumpPress);
         trackDropItem(minecraft.options.keyDrop.isDown());
         trackSprint(minecraft.player.isSprinting() || (minecraft.options.keySprint.isDown() && dropItemPressed)); // log actual sprinting state
 
@@ -373,6 +396,8 @@ public class ActionRecorder {
 
         if (saveFrame()) {
             saveActionState();
+        } else {
+            System.out.println("Dropped frame!");
         }
         Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
         pressedScreenKeys.clear();
@@ -451,13 +476,9 @@ public class ActionRecorder {
         FrameCapture.grabMainFramebufferRGB(frameBuffer);
         renderCursor(mc.screen != null, frameBuffer);
         if (videoWriter != null) {
-            try {
-                videoWriter.pushFrame(frameBuffer);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
+            return videoWriter.pushFrame(frameBuffer);
         }
-        return true;
+        return false;
     }
 
     private static final String cursorResourcePath = "/assets/minecraftactionrecorder/cursor.png";
@@ -609,6 +630,10 @@ public class ActionRecorder {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
+            if (lastJumpState) {
+                pendingJumpPress = false;
+                lastJumpState = false;
+            }
         }
     }
 
@@ -649,5 +674,9 @@ public class ActionRecorder {
             uploadDaemon.notifyRecordingFinished(currentLogCapturePath);
             currentLogCapturePath = null;
         }
+    }
+
+    public static void onGameTick() {
+        // InputFaker.onTick();
     }
 }

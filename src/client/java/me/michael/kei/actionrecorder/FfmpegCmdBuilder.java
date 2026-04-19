@@ -128,19 +128,19 @@ public class FfmpegCmdBuilder {
                 "-vf", cpuFilterChain,
                 "-c:v", nvencCodec,
                 "-preset", profile.nvencPreset(), // p1 (fast) ... p7 (slow/best)
-                //"-tune", "hq",
+                "-tune", "hq",
                 "-profile:v", nvencProfile,
                 "-rc", "vbr",
                 "-cq", String.valueOf(profile.nvencCq()),
                 "-b:v", kbps(profile.targetBitrateKbps()),
                 "-maxrate", kbps(profile.maxBitrateKbps()),
                 "-bufsize", kbps(profile.bufferSizeKbps()),
-                //"-rc-lookahead", "32",
-                //"-spatial_aq", "1",
-                //"-temporal_aq", "1",
-                //"-aq-strength", "10",
-                //"-bf", "3",
-                //"-g", String.valueOf(profile.gopSize()),
+                "-rc-lookahead", "32",
+                "-spatial_aq", "1",
+                "-temporal_aq", "1",
+                "-aq-strength", "10",
+                "-bf", "3",
+                "-g", String.valueOf(profile.gopSize()),
                 "-pix_fmt", "yuv420p"     // broad decode compatibility
         ));
     }
